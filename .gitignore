@@ -1,4 +1,7 @@
-# Devenv
+# rust generated files
+/target
+
+# devenv
 .devenv*
 devenv.local.nix
 devenv.local.yaml
