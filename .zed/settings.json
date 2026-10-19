@@ -31,6 +31,13 @@
         "arguments": ["--stdio"],
       },
     },
+
+    // Just language server (nix/just.nix)
+    "just-lsp": {
+      "binary": {
+        "path": ".devenv/profile/bin/just-lsp",
+      },
+    },
   },
 
   "languages": {
@@ -45,6 +52,15 @@
     },
     "YAML": {
       "language_servers": ["yaml-language-server"],
+    },
+    "Just": {
+      "language_servers": ["just-lsp"],
+      "formatter": {
+        "external": {
+          "command": ".devenv/profile/bin/just-formatter",
+          "arguments": ["-"],
+        },
+      },
     },
   },
 }
