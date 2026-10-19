@@ -1,0 +1,63 @@
+{
+  "lsp": {
+    // use the rust-analyzer shipped by devenv (nix/rust.nix)
+    "rust-analyzer": {
+      "binary": {
+        "path": ".devenv/profile/bin/rust-analyzer",
+      },
+    },
+
+    // crates.io language server for Cargo.toml dependencies (nix/rust.nix)
+    "crates-lsp": {
+      "binary": {
+        "path": ".devenv/profile/bin/crates-lsp",
+      },
+    },
+
+    // nixd language server (nix/nix.nix) (lmao at that file path)
+    // uses devenv integration https://devenv.sh/lsp/
+    "nixd": {
+      "binary": {
+        "path": "devenv",
+        "arguments": ["lsp"],
+      },
+    },
+
+    // TOML language server (nix/toml.nix).
+    "tombi": {
+      "binary": {
+        "path": ".devenv/profile/bin/tombi",
+        "arguments": ["lsp"],
+      },
+    },
+
+    // YAML language server (nix/yaml.nix)
+    "yaml-language-server": {
+      "binary": {
+        "path": ".devenv/profile/bin/yaml-language-server",
+        "arguments": ["--stdio"],
+      },
+    },
+  },
+
+  "languages": {
+    "Nix": {
+      "language_servers": ["nixd"],
+      // custom formatter step that uses deadnix and statix (nix/nix.nix)
+      "formatter": {
+        "external": {
+          "command": ".zed/bin/nix-fix.sh",
+        },
+      },
+    },
+    "Rust": {
+      "language_servers": ["rust-analyzer"],
+    },
+    "TOML": {
+      "language_servers": ["tombi", "crates-lsp"],
+    },
+    "YAML": {
+      "language_servers": ["yaml-language-server"],
+    },
+  },
+}
