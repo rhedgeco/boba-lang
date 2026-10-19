@@ -1,0 +1,13 @@
+# exclude the devenv and direnv directory
+# this helps with LSP file watching
+[files]
+exclude = [".devenv/**", ".direnv/**"]
+
+# apply rules to cargo toml files
+[[schemas]]
+path = "https://www.schemastore.org/cargo.json"
+include = ["**/Cargo.toml"]
+
+[schemas.format.rules]
+array-values-order.enabled = true
+table-keys-order.enabled = true

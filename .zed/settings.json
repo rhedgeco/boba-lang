@@ -7,13 +7,6 @@
       },
     },
 
-    // crates.io language server for Cargo.toml dependencies (nix/rust.nix)
-    "crates-lsp": {
-      "binary": {
-        "path": ".devenv/profile/bin/crates-lsp",
-      },
-    },
-
     // nixd language server (nix/nix.nix) (lmao at that file path)
     // uses devenv integration https://devenv.sh/lsp/
     "nixd": {
@@ -43,18 +36,12 @@
   "languages": {
     "Nix": {
       "language_servers": ["nixd"],
-      // custom formatter step that uses deadnix and statix (nix/nix.nix)
-      "formatter": {
-        "external": {
-          "command": ".zed/bin/nix-fix.sh",
-        },
-      },
     },
     "Rust": {
       "language_servers": ["rust-analyzer"],
     },
     "TOML": {
-      "language_servers": ["tombi", "crates-lsp"],
+      "language_servers": ["tombi"],
     },
     "YAML": {
       "language_servers": ["yaml-language-server"],
