@@ -74,28 +74,33 @@ impl<'a> Lexer<'a> {
     }
 
     fn parse_next_token(&mut self) -> Option<Token<'a>> {
-        // reset the token start location
-        self.start = self.end();
+        loop {
+            // reset the token start location
+            self.start = self.end();
 
-        // parse token based on starting character
-        Some(match self.take_char()? {
-            // parse simple single char tokens
-            '.' => Token::Point,
-            ',' => Token::Comma,
-            '=' => Token::Equality,
-            ':' => Token::Colon,
-            ';' => Token::SemiColon,
-            '(' => Token::Open(Bracket::Round),
-            ')' => Token::Close(Bracket::Round),
-            '{' => Token::Open(Bracket::Curly),
-            '}' => Token::Close(Bracket::Curly),
+            // parse token based on starting character
+            return Some(match self.take_char()? {
+                // skip whitespace tokens
+                ' ' | '\r' | '\n' | '\t' => continue,
 
-            // parse identifier if the token start is valid
-            c if utils::is_ident_start(c) => self.parse_identifier(),
+                // parse simple single char tokens
+                '.' => Token::Point,
+                ',' => Token::Comma,
+                '=' => Token::Equality,
+                ':' => Token::Colon,
+                ';' => Token::SemiColon,
+                '(' => Token::Open(Bracket::Round),
+                ')' => Token::Close(Bracket::Round),
+                '{' => Token::Open(Bracket::Curly),
+                '}' => Token::Close(Bracket::Curly),
 
-            // catch-all for invalid token characters
-            c => Token::Invalid(c),
-        })
+                // parse identifier if the token start is valid
+                c if utils::is_ident_start(c) => self.parse_identifier(),
+
+                // catch-all for invalid token characters
+                c => Token::Invalid(c),
+            });
+        }
     }
 
     fn parse_identifier(&mut self) -> Token<'a> {

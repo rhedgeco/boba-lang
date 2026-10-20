@@ -1,0 +1,8 @@
+[package]
+name = "boba-analyzer"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+boba-lexer.workspace = true
+clap = { version = "4.6", features = ["derive"] }

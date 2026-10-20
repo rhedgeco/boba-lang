@@ -1,0 +1,3 @@
+pub scope Hello {
+    type = struct().field(number, u32);
+}

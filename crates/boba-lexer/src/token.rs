@@ -1,5 +1,7 @@
+use derive_more::Display;
+
 /// The kinds of brackets a lexer recognises.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Display, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Bracket {
     /// Round brackets: `( )`
     Round,
@@ -8,7 +10,7 @@ pub enum Bracket {
 }
 
 /// An identifier, either a reserved keyword or a user supplied name.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Display, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Ident<'a> {
     /// A user defined name, borrowed from the source.
     Custom(&'a str),
@@ -23,7 +25,7 @@ pub enum Ident<'a> {
 }
 
 /// A single token produced by a lexer.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Display, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Token<'a> {
     /// An unrecognized character.
     Invalid(char),

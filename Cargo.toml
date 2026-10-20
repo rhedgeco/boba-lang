@@ -3,4 +3,5 @@ resolver = "3"
 members = ["crates/*"]
 
 [workspace.dependencies]
+boba-analyzer = { path = "crates/boba-analyzer" }
 boba-lexer = { path = "crates/boba-lexer" }
