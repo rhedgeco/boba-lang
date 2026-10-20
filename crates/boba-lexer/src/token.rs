@@ -29,6 +29,10 @@ pub enum Token<'a> {
     Close(Bracket),
     /// An equals sign: `=`
     Equality,
+    /// A colon: `:`
+    Colon,
+    /// A semicolon: `;`
+    SemiColon,
     /// A comma: `,`
     Comma,
     /// A point: `.`

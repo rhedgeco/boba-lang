@@ -83,6 +83,8 @@ impl<'a> Lexer<'a> {
             '.' => Token::Point,
             ',' => Token::Comma,
             '=' => Token::Equality,
+            ':' => Token::Colon,
+            ';' => Token::SemiColon,
             '(' => Token::Open(Bracket::Round),
             ')' => Token::Close(Bracket::Round),
             '{' => Token::Open(Bracket::Curly),
