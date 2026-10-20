@@ -2,7 +2,7 @@ use std::{iter::Peekable, ops::Range, str::Chars};
 
 use crate::{
     Token,
-    token::{Bracket, Ident},
+    token::{Bracket, Ident, StrLiteral},
 };
 
 /// A lexer that turns source text into a stream of [`Token`]s.
@@ -87,12 +87,23 @@ impl<'a> Lexer<'a> {
                 '.' => Token::Point,
                 ',' => Token::Comma,
                 '=' => Token::Equality,
-                ':' => Token::Colon,
                 ';' => Token::SemiColon,
                 '(' => Token::Open(Bracket::Round),
                 ')' => Token::Close(Bracket::Round),
                 '{' => Token::Open(Bracket::Curly),
                 '}' => Token::Close(Bracket::Curly),
+
+                // parse simple souble char tokens
+                ':' => match self.peek_char() {
+                    Some(':') => {
+                        self.take_char();
+                        Token::DoubleColon
+                    }
+                    _ => Token::Colon,
+                },
+
+                // parse string literals that start with "
+                '"' => self.parse_string_literal(),
 
                 // parse identifier if the token start is valid
                 c if utils::is_ident_start(c) => self.parse_identifier(),
@@ -101,6 +112,34 @@ impl<'a> Lexer<'a> {
                 c => Token::Invalid(c),
             });
         }
+    }
+
+    fn parse_string_literal(&mut self) -> Token<'a> {
+        let closed = loop {
+            match self.take_char() {
+                // if we get no tokens, then its an unclosed string
+                None => break false,
+
+                // end the string when we get a closing quote
+                Some('"') => break true,
+
+                // if we get a backslash, try to escape the next character
+                Some('\\') => match self.take_char() {
+                    Some(_) => continue, // anything can be escaped
+                    None => break false, // but we break on an unclosed string
+                },
+
+                // any other character is just part of the string
+                // so we continue and test the next char
+                Some(_) => continue,
+            }
+        };
+
+        // extract the string content from the source text
+        let start = self.start + 1;
+        let end = self.end - usize::from(closed);
+        let content = &self.source[start..end];
+        Token::StrLiteral(StrLiteral { content, closed })
     }
 
     fn parse_identifier(&mut self) -> Token<'a> {

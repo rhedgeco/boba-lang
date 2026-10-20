@@ -1,3 +1,11 @@
-pub scope Hello {
-    type = struct().field(number, u32);
-}
+use std;
+
+pub const Hello = scope({
+    pub const self = struct().field(name, str);
+
+    pub const print = func().self().body({
+        std::print("Hello, ");
+        std::print(self.name);
+        std::print("!");
+    });
+});

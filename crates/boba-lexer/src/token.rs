@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use derive_more::Display;
 
 /// The kinds of brackets a lexer recognises.
@@ -9,6 +11,33 @@ pub enum Bracket {
     Curly,
 }
 
+/// A string literal token.
+///
+/// The literal may be unterminated if the source ended before a closing quote
+/// was found, which is tracked by [`closed`](StrLiteral::closed).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct StrLiteral<'a> {
+    /// The literal's contents, borrowed from the source, excluding the
+    /// surrounding quotes.
+    pub content: &'a str,
+    /// Whether the literal was terminated by a closing quote.
+    pub closed: bool,
+}
+
+impl<'a> Display for StrLiteral<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "\"{}{}",
+            self.content,
+            match self.closed {
+                true => "\"",
+                false => "",
+            }
+        )
+    }
+}
+
 /// An identifier, either a reserved keyword or a user supplied name.
 #[derive(Debug, Display, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Ident<'a> {
@@ -16,12 +45,10 @@ pub enum Ident<'a> {
     Custom(&'a str),
     /// The `pub` keyword.
     Pub,
-    /// The `scope` keyword.
-    Scope,
-    /// The `type` keyword.
-    Type,
-    /// The `let` keyword.
-    Let,
+    /// The `const` keyword.
+    Const,
+    /// The `use` keyword.
+    Use,
 }
 
 /// A single token produced by a lexer.
@@ -31,14 +58,20 @@ pub enum Token<'a> {
     Invalid(char),
     /// An identifier or keyword.
     Ident(Ident<'a>),
+    /// A string literal.
+    StrLiteral(StrLiteral<'a>),
     /// An opening bracket.
+    #[display("Open {_0}")]
     Open(Bracket),
     /// A closing bracket.
+    #[display("Close {_0}")]
     Close(Bracket),
     /// An equals sign: `=`
     Equality,
     /// A colon: `:`
     Colon,
+    /// A double colon: `::`
+    DoubleColon,
     /// A semicolon: `;`
     SemiColon,
     /// A comma: `,`
@@ -54,9 +87,8 @@ impl<'a> Ident<'a> {
         // phf keyword table matching strings to concrete identifiers
         static KEYWORDS: phf::Map<&'static str, Ident<'static>> = phf::phf_map! {
             "pub" => Ident::Pub,
-            "scope" => Ident::Scope,
-            "type" => Ident::Type,
-            "let" => Ident::Let,
+            "const" => Ident::Const,
+            "use" => Ident::Use,
         };
 
         // try to map the ident to a keyword first, otherwise build a custom ident
@@ -69,12 +101,31 @@ mod tests {
     use super::*;
 
     #[test]
+    fn str_literal_display_closed() {
+        // a closed literal renders with both quotes
+        let lit = StrLiteral {
+            content: "hello",
+            closed: true,
+        };
+        assert_eq!(lit.to_string(), "\"hello\"");
+    }
+
+    #[test]
+    fn str_literal_display_unclosed() {
+        // an unclosed literal omits the trailing quote
+        let lit = StrLiteral {
+            content: "hello",
+            closed: false,
+        };
+        assert_eq!(lit.to_string(), "\"hello");
+    }
+
+    #[test]
     fn ident_build_maps_known_keywords() {
         // keywords should resolve to their correct variants
         assert_eq!(Ident::build("pub"), Ident::Pub);
-        assert_eq!(Ident::build("scope"), Ident::Scope);
-        assert_eq!(Ident::build("type"), Ident::Type);
-        assert_eq!(Ident::build("let"), Ident::Let);
+        assert_eq!(Ident::build("const"), Ident::Const);
+        assert_eq!(Ident::build("use"), Ident::Use);
     }
 
     #[test]
