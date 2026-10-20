@@ -158,8 +158,8 @@ mod tests {
     #[test]
     fn lexer_tokenizes_keyword() {
         // a known keyword resolves to its dedicated variant
-        let tokens: Vec<_> = Lexer::new("const").collect();
-        assert_eq!(tokens, vec![Token::Ident(Ident::Const)]);
+        let tokens: Vec<_> = Lexer::new("pub").collect();
+        assert_eq!(tokens, vec![Token::Ident(Ident::Pub)]);
     }
 
     #[test]

@@ -12,8 +12,14 @@ pub enum Bracket {
 pub enum Ident<'a> {
     /// A user defined name, borrowed from the source.
     Custom(&'a str),
-    /// The `const` keyword.
-    Const,
+    /// The `pub` keyword.
+    Pub,
+    /// The `scope` keyword.
+    Scope,
+    /// The `type` keyword.
+    Type,
+    /// The `let` keyword.
+    Let,
 }
 
 /// A single token produced by a lexer.
@@ -45,7 +51,10 @@ impl<'a> Ident<'a> {
     pub fn build(ident: &'a str) -> Self {
         // phf keyword table matching strings to concrete identifiers
         static KEYWORDS: phf::Map<&'static str, Ident<'static>> = phf::phf_map! {
-            "const" => Ident::Const,
+            "pub" => Ident::Pub,
+            "scope" => Ident::Scope,
+            "type" => Ident::Type,
+            "let" => Ident::Let,
         };
 
         // try to map the ident to a keyword first, otherwise build a custom ident
@@ -59,8 +68,11 @@ mod tests {
 
     #[test]
     fn ident_build_maps_known_keywords() {
-        // `const` should resolve to the keyword variant
-        assert_eq!(Ident::build("const"), Ident::Const);
+        // keywords should resolve to their correct variants
+        assert_eq!(Ident::build("pub"), Ident::Pub);
+        assert_eq!(Ident::build("scope"), Ident::Scope);
+        assert_eq!(Ident::build("type"), Ident::Type);
+        assert_eq!(Ident::build("let"), Ident::Let);
     }
 
     #[test]
@@ -71,7 +83,7 @@ mod tests {
 
     #[test]
     fn ident_build_is_case_sensitive() {
-        // keyword matching is exact, so `Const` is not the keyword
-        assert_eq!(Ident::build("Const"), Ident::Custom("Const"));
+        // keyword matching is exact, so `Pub` is not the keyword
+        assert_eq!(Ident::build("Pub"), Ident::Custom("Pub"));
     }
 }
