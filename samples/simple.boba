@@ -5,22 +5,27 @@ const std = import().std();
 // named sub-scopes are const assignments that assign a braced scope
 // in this case, the named sub-scope can only contain other const assignments
 // because all of the contents have to be able to be resolved in a const context
-const module = {
+const sub_scope = {
     // structs are const assignments that call the `struct()` function
-    pub const Hello = struct()
-        // fields can be added by chaining the `field(...)` function
-        .field(name, str);
+    // the build function takes a braced scope that defines the fields
+    // these are just const assignments that evaluate to a type
+    pub const Hello = struct().build({
+        // any fields that are public can be accessed with the . operator
+        // if all the fields are public, then the struct can be created without an explicit constructor
+        pub const name = std:str;
+    });
 
     // functions are const assignments that call the `func()` function
     pub const print_hello = func()
         // inputs can be added by chaining the `input(...)` function
-        .input(hello, Hello)
-        // the body of the function is defined like this
-        // the body is also defined by a braced scope
-        // however, this scope can contain inline expressions that will be run in order at runtime
-        .body({
-            // items can be extracted from a sub-scope (std-lib here) by using the color operator
-            // this inspects the subscope of the target, and accesses the named item from it
+        // these are just more const assignments that evaluate to a type
+        .input({
+            pub const hello = Hello;
+        })
+        // the body of the function is defined in the `build(...)` function
+        // the build function accepts another braced scope just like the ones above
+        // however, this scope can contain inline expressions that will be executed in order at runtime
+        .build({
             std:print("Hello, ");
             std:print(hello.name);
             std:print("!");
@@ -28,6 +33,12 @@ const module = {
 };
 
 // even the main function is just another const assignment function
-pub const main = func().body({
-    // do something
+pub const main = func().build({
+    // let assignments are used for runtime assignments
+    // since all the fields are public on Hello
+    // it can just be constructed like this
+    let hello = sub_scope:Hello("Ryan");
+
+    // and then the print function from sub_scope can be called with the struct
+    sub_scope:print_hello(hello);
 });

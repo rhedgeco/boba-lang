@@ -13,6 +13,7 @@ pub enum Token {
     StrLiteral,
     Identifier,
     Constant,
+    Runtime,
     Public,
 
     // operators

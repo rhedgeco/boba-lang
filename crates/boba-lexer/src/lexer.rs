@@ -114,13 +114,16 @@ enum Ident {
     Custom,
     Const,
     Pub,
+    Let,
 }
 
 impl Ident {
     // helper consts for tracking keyword characters
     pub const PUB_FIRST: char = Self::PUB_CHARS[0];
+    pub const LET_FIRST: char = Self::LET_CHARS[0];
     pub const CONST_FIRST: char = Self::CONST_CHARS[0];
     pub const PUB_CHARS: &[char] = &['p', 'u', 'b'];
+    pub const LET_CHARS: &[char] = &['l', 'e', 't'];
     pub const CONST_CHARS: &[char] = &['c', 'o', 'n', 's', 't'];
 }
 
@@ -141,10 +144,21 @@ impl IdentBuilder {
             length: 1,
             ident: match c {
                 Ident::PUB_FIRST => Ident::Pub,
+                Ident::LET_FIRST => Ident::Let,
                 Ident::CONST_FIRST => Ident::Const,
                 _ => Ident::Custom,
             },
         })
+    }
+
+    /// Returns true if the character is valid for the expected keyword
+    pub fn keyword_char(&self, c: char) -> bool {
+        match self.ident {
+            Ident::Pub => Ident::PUB_CHARS.get(self.length) == Some(&c),
+            Ident::Let => Ident::LET_CHARS.get(self.length) == Some(&c),
+            Ident::Const => Ident::CONST_CHARS.get(self.length) == Some(&c),
+            _ => false,
+        }
     }
 
     /// Injects a character, and attempts to build an ident token
@@ -155,19 +169,11 @@ impl IdentBuilder {
             return BuildState::Bail(self.finish());
         }
 
-        // if the token is still pending and the character is valid
-        // match the character to build any prospective keywords
-        self.ident = match self.ident {
-            Ident::Pub => match Ident::PUB_CHARS.get(self.length) == Some(&c) {
-                false => Ident::Custom,
-                true => Ident::Pub,
-            },
-            Ident::Const => match Ident::CONST_CHARS.get(self.length) == Some(&c) {
-                false => Ident::Custom,
-                true => Ident::Const,
-            },
-            _ => Ident::Custom,
-        };
+        // if the character is not valid for the expected keyword
+        if !self.keyword_char(c) {
+            // then set the identifier to custom
+            self.ident = Ident::Custom;
+        }
 
         // increment the length of the token for the next iteration
         self.length += 1;
@@ -181,6 +187,7 @@ impl IdentBuilder {
         // A prefix like "pu" matches so far but is not the full "pub" keyword.
         match self.ident {
             Ident::Pub if self.length == Ident::PUB_CHARS.len() => Token::Public.into(),
+            Ident::Let if self.length == Ident::LET_CHARS.len() => Token::Runtime.into(),
             Ident::Const if self.length == Ident::CONST_CHARS.len() => Token::Constant.into(),
             _ => Token::Identifier.into(),
         }
