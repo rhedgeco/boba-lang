@@ -29,6 +29,7 @@ pub enum Trivia {
 }
 
 /// Tracks the build state of a token producer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 enum BuildState<T> {
     /// The character was consumed, and it produced a token.
     Consumed(ParseToken),
@@ -50,6 +51,7 @@ impl<T> BuildState<T> {
 }
 
 /// Builds a newline trivia token out of characters
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 struct NewlineBuilder;
 
 impl NewlineBuilder {
@@ -70,6 +72,7 @@ impl NewlineBuilder {
 }
 
 /// Builds a divide token or comment trivia out of characters
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 struct ForwardSlashBuilder;
 
 impl ForwardSlashBuilder {
@@ -90,6 +93,7 @@ impl ForwardSlashBuilder {
 }
 
 /// Builds a multiline string out of characters, starting from a backslash
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 struct BackSlashBuilder;
 
 impl BackSlashBuilder {
@@ -110,6 +114,7 @@ impl BackSlashBuilder {
 }
 
 /// Builds a multiline string token out of characters
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 struct MultiLineStrBuilder;
 
 impl MultiLineStrBuilder {
@@ -130,6 +135,7 @@ impl MultiLineStrBuilder {
 }
 
 /// Builds comment trivia out of characters
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 struct CommentBuilder;
 
 impl CommentBuilder {
@@ -150,6 +156,7 @@ impl CommentBuilder {
 }
 
 /// The range of possible identifiers
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 enum Ident {
     Custom,
     Const,
@@ -168,6 +175,7 @@ impl Ident {
 }
 
 /// Builds an identifier token out of chars
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 struct IdentBuilder {
     length: usize,
     ident: Ident,
@@ -235,6 +243,7 @@ impl IdentBuilder {
 }
 
 /// Builds an inline string token out of chars
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 struct InlineStrBuilder {
     escaping: bool,
 }
@@ -276,7 +285,7 @@ impl InlineStrBuilder {
     }
 }
 
-#[derive(From)]
+#[derive(Debug, From, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 enum TokenBuilder {
     Clear,
     Ident(IdentBuilder),
@@ -350,17 +359,17 @@ impl TokenBuilder {
 
 /// A lexer that turns source text into a stream of [`Token`]s.
 /// Also tracks the byte span of the most recently produced token.
-pub struct Lexer<'a> {
+pub struct Lexer<'source> {
     builder: TokenBuilder,
-    chars: Peekable<Chars<'a>>,
-    source: &'a str,
+    chars: Peekable<Chars<'source>>,
+    source: &'source str,
     start: usize,
     end: usize,
 }
 
-impl<'a> Lexer<'a> {
+impl<'source> Lexer<'source> {
     /// Creates a new [`Lexer`] over the given source text.
-    pub fn new(source: &'a str) -> Self {
+    pub fn new(source: &'source str) -> Self {
         Self {
             builder: TokenBuilder::Clear,
             chars: source.chars().peekable(),
@@ -385,21 +394,16 @@ impl<'a> Lexer<'a> {
         self.start()..self.end()
     }
 
-    /// The source text the lexer is reading from.
-    pub fn source(&self) -> &'a str {
-        self.source
-    }
-
     /// The slice of source text covered by the current token.
-    pub fn token_source(&self) -> &'a str {
-        &self.source()[self.range()]
+    pub fn content(&self) -> &'source str {
+        &self.source[self.range()]
     }
 
     /// Continues lexing into a new source buffer,
     /// picking up where the current lexer left off.
     ///
     /// This means that any mid-parse of strings or idents will still be completed.
-    pub fn extend<'b>(self, source: &'b str) -> Lexer<'b> {
+    pub fn extend<'a>(self, source: &'a str) -> Lexer<'a> {
         // the builder contains all the parsing state
         // so to extend the lexer, we just need to pass along the builder
         Lexer {
@@ -740,7 +744,7 @@ mod tests {
         let mut lexer = Lexer::new("foo,bar");
         lexer.next();
         assert_eq!(lexer.range(), 0..3);
-        assert_eq!(lexer.token_source(), "foo");
+        assert_eq!(lexer.content(), "foo");
     }
 
     #[test]
@@ -748,15 +752,15 @@ mod tests {
         // the range moves to cover each token, including whitespace trivia
         let mut lexer = Lexer::new("foo  bar");
         lexer.next();
-        assert_eq!(lexer.token_source(), "foo");
+        assert_eq!(lexer.content(), "foo");
         // step past the two spaces separating the identifiers
         lexer.next();
         assert_eq!(lexer.range(), 3..4);
-        assert_eq!(lexer.token_source(), " ");
+        assert_eq!(lexer.content(), " ");
         lexer.next();
         lexer.next();
         assert_eq!(lexer.range(), 5..8);
-        assert_eq!(lexer.token_source(), "bar");
+        assert_eq!(lexer.content(), "bar");
     }
 
     #[test]

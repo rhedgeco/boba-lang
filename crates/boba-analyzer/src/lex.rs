@@ -8,15 +8,15 @@ pub fn print_tokens(source: &str) {
     while let Some(token) = lexer.next() {
         match token {
             // print lexical tokens
-            ParseToken::Token(token) => println!("{token:?}: {}", lexer.token_source()),
+            ParseToken::Token(token) => println!("{token:?}: {}", lexer.content()),
             // show invalid tokens
             ParseToken::Trivia(Trivia::Invalid) => {
-                eprintln!("Invalid Token: '{}'", lexer.token_source())
+                eprintln!("Invalid Token: '{}'", lexer.content())
             }
             // skip whitespace tokens
             ParseToken::Trivia(Trivia::Newline | Trivia::Space | Trivia::Tab) => {}
             // and print comments directly
-            ParseToken::Trivia(Trivia::Comment) => println!("{}", lexer.token_source()),
+            ParseToken::Trivia(Trivia::Comment) => println!("{}", lexer.content()),
         }
     }
 }
