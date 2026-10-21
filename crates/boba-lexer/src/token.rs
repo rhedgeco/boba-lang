@@ -20,6 +20,6 @@ pub enum Token {
     // operators
     Assign,
     Divide,
-    ScopeAccess,
-    MemberAccess,
+    AccessScope,
+    AccessMember,
 }

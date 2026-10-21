@@ -311,10 +311,10 @@ impl TokenBuilder {
             Self::Clear => match c {
                 // immediately consume and return simple char tokens
                 ' ' => BuildState::Consumed(Trivia::Space.into()),
-                '.' => BuildState::Consumed(Token::MemberAccess.into()),
+                '.' => BuildState::Consumed(Token::AccessMember.into()),
                 ',' => BuildState::Consumed(Token::Delimiter.into()),
                 '=' => BuildState::Consumed(Token::Assign.into()),
-                ':' => BuildState::Consumed(Token::ScopeAccess.into()),
+                ':' => BuildState::Consumed(Token::AccessScope.into()),
                 ';' => BuildState::Consumed(Token::CloseExpr.into()),
                 '(' => BuildState::Consumed(Token::OpenGroup.into()),
                 ')' => BuildState::Consumed(Token::CloseGroup.into()),
@@ -490,10 +490,10 @@ mod tests {
         assert_eq!(
             tokens,
             vec![
-                Token::MemberAccess.into(),
+                Token::AccessMember.into(),
                 Token::Delimiter.into(),
                 Token::Assign.into(),
-                Token::ScopeAccess.into(),
+                Token::AccessScope.into(),
                 Token::CloseExpr.into(),
                 Token::OpenGroup.into(),
                 Token::CloseGroup.into(),
@@ -771,7 +771,7 @@ mod tests {
             tokens,
             vec![
                 Token::Identifier.into(),
-                Token::MemberAccess.into(),
+                Token::AccessMember.into(),
                 Token::Identifier.into()
             ]
         );
