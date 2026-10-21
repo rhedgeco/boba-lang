@@ -1,5 +1,5 @@
-// there are no multiline comments
-// only comments that start with // on each line
+// there is no multiline comment syntax
+// all comments have to start with // on each line
 
 const message = \\multiline strings are very similar to comments
                 \\they are constructed with a leading double backslash
