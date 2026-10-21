@@ -1,11 +1,19 @@
 const std = import().std();
 
-pub const hello = scope().body({
-    pub const self = struct().field(name, str);
+pub const module = {
+    pub const Hello = struct()
+        .field(name, str)
+        .scope({
+            pub const print = func().self().body({
+                std:print("Hello, ");
+                std:print(self.name);
+                std:print("!");
+            });
+        });
 
-    pub const print = func().self().body({
-        std::print("Hello, ");
-        std::print(self.name);
-        std::print("!");
+    pub const print = func().body({
+        std:print("Hello, ");
+        std:print(self.name);
+        std:print("!");
     });
-});
+};
