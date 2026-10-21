@@ -207,7 +207,7 @@ impl IdentBuilder {
         // A prefix like "pu" matches so far but is not the full "pub" keyword.
         match self.ident {
             Ident::Pub if self.length == Ident::PUB_CHARS.len() => Token::Public.into(),
-            Ident::Let if self.length == Ident::LET_CHARS.len() => Token::Runtime.into(),
+            Ident::Let if self.length == Ident::LET_CHARS.len() => Token::Variable.into(),
             Ident::Const if self.length == Ident::CONST_CHARS.len() => Token::Constant.into(),
             _ => Token::Identifier.into(),
         }

@@ -14,7 +14,7 @@ pub enum Token {
     MultiLineStrLiteral,
     Identifier,
     Constant,
-    Runtime,
+    Variable,
     Public,
 
     // operators
