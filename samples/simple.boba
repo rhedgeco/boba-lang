@@ -1,6 +1,6 @@
-use std;
+const std = import().std();
 
-pub const Hello = scope({
+pub const hello = scope().body({
     pub const self = struct().field(name, str);
 
     pub const print = func().self().body({
