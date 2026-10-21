@@ -1,9 +1,6 @@
 use std::{iter::Peekable, mem::replace, ops::Range, str::Chars};
 
-use crate::{
-    Token,
-    token::{Bracket, Ident},
-};
+use crate::Token;
 
 /// Tracks the build state of a token producer.
 enum BuildState<T> {
@@ -26,6 +23,21 @@ impl<T> BuildState<T> {
     }
 }
 
+/// The range of possible identifiers
+enum Ident {
+    Custom,
+    Const,
+    Pub,
+}
+
+impl Ident {
+    // helper consts for tracking keyword characters
+    pub const PUB_FIRST: char = Self::PUB_CHARS[0];
+    pub const CONST_FIRST: char = Self::CONST_CHARS[0];
+    pub const PUB_CHARS: &[char] = &['p', 'u', 'b'];
+    pub const CONST_CHARS: &[char] = &['c', 'o', 'n', 's', 't'];
+}
+
 /// Builds an identifier token out of chars
 struct IdentBuilder {
     length: usize,
@@ -33,12 +45,6 @@ struct IdentBuilder {
 }
 
 impl IdentBuilder {
-    // helper consts for tracking keyword characters
-    const PUB_FIRST: char = Self::PUB_CHARS[0];
-    const CONST_FIRST: char = Self::CONST_CHARS[0];
-    const PUB_CHARS: &[char] = &['p', 'u', 'b'];
-    const CONST_CHARS: &[char] = &['c', 'o', 'n', 's', 't'];
-
     /// Constructs a new ident builder, if the starting character is valid
     pub fn new(c: char) -> Option<Self> {
         if !utils::is_valid_ident_start(c) {
@@ -48,8 +54,8 @@ impl IdentBuilder {
         Some(Self {
             length: 1,
             ident: match c {
-                Self::PUB_FIRST => Ident::Pub,
-                Self::CONST_FIRST => Ident::Const,
+                Ident::PUB_FIRST => Ident::Pub,
+                Ident::CONST_FIRST => Ident::Const,
                 _ => Ident::Custom,
             },
         })
@@ -66,11 +72,11 @@ impl IdentBuilder {
         // if the token is still pending and the character is valid
         // match the character to build any prospective keywords
         self.ident = match self.ident {
-            Ident::Pub => match Self::PUB_CHARS.get(self.length) == Some(&c) {
+            Ident::Pub => match Ident::PUB_CHARS.get(self.length) == Some(&c) {
                 false => Ident::Custom,
                 true => Ident::Pub,
             },
-            Ident::Const => match Self::CONST_CHARS.get(self.length) == Some(&c) {
+            Ident::Const => match Ident::CONST_CHARS.get(self.length) == Some(&c) {
                 false => Ident::Custom,
                 true => Ident::Const,
             },
@@ -85,13 +91,13 @@ impl IdentBuilder {
 
     /// Immediately resolve the identifier into a token
     pub fn finish(self) -> Token {
-        // Resolves the tracked keyword, downgrading incomplete prefixes to custom.
+        // Resolves the tracked keyword, downgrading incomplete prefixes to identifier
         // A prefix like "pu" matches so far but is not the full "pub" keyword.
-        Token::Ident(match self.ident {
-            Ident::Pub if self.length == Self::PUB_CHARS.len() => Ident::Pub,
-            Ident::Const if self.length == Self::CONST_CHARS.len() => Ident::Const,
-            _ => Ident::Custom,
-        })
+        match self.ident {
+            Ident::Pub if self.length == Ident::PUB_CHARS.len() => Token::Public,
+            Ident::Const if self.length == Ident::CONST_CHARS.len() => Token::Constant,
+            _ => Token::Identifier,
+        }
     }
 }
 
@@ -112,7 +118,7 @@ impl InlineStringBuilder {
             // newline tokens mean the inline string is unclosed
             // newlines cannot be escaped so this is unconditional
             // we bail here so the parser can detect the newline still
-            '\r' | '\n' => return BuildState::Bail(Token::UnclosedStringLiteral),
+            '\r' | '\n' => return BuildState::Bail(Token::Invalid),
 
             // if not currently escaping, quotes close the string
             // the quotation char should be consumed in the process
@@ -129,9 +135,9 @@ impl InlineStringBuilder {
         BuildState::Pending(self)
     }
 
-    /// Immediately resolve the string into an unclosed literal
+    /// Immediately resolve the string a an unclosed literal
     pub fn finish(self) -> Token {
-        Token::UnclosedStringLiteral
+        Token::Invalid
     }
 }
 
@@ -164,15 +170,15 @@ impl TokenBuilder {
                 ' ' | '\r' | '\n' | '\t' => BuildState::Pending(TokenBuilder::Clear),
 
                 // immediately consume and return simple char tokens
-                '.' => BuildState::Consumed(Token::Point),
-                ',' => BuildState::Consumed(Token::Comma),
+                '.' => BuildState::Consumed(Token::MemberProbe),
+                ',' => BuildState::Consumed(Token::Delimiter),
                 '=' => BuildState::Consumed(Token::Equality),
-                ':' => BuildState::Consumed(Token::Colon),
-                ';' => BuildState::Consumed(Token::SemiColon),
-                '(' => BuildState::Consumed(Token::Open(Bracket::Round)),
-                ')' => BuildState::Consumed(Token::Close(Bracket::Round)),
-                '{' => BuildState::Consumed(Token::Open(Bracket::Curly)),
-                '}' => BuildState::Consumed(Token::Close(Bracket::Curly)),
+                ':' => BuildState::Consumed(Token::ScopeProbe),
+                ';' => BuildState::Consumed(Token::CloseExpr),
+                '(' => BuildState::Consumed(Token::OpenGroup),
+                ')' => BuildState::Consumed(Token::CloseGroup),
+                '{' => BuildState::Consumed(Token::OpenScope),
+                '}' => BuildState::Consumed(Token::CloseScope),
 
                 // start building an inline string if the character is a quote
                 '"' => BuildState::Pending(Self::InlineString(InlineStringBuilder::new())),
@@ -338,49 +344,46 @@ mod tests {
         assert_eq!(
             tokens,
             vec![
-                Token::Point,
-                Token::Comma,
+                Token::MemberProbe,
+                Token::Delimiter,
                 Token::Equality,
-                Token::Colon,
-                Token::SemiColon,
-                Token::Open(Bracket::Round),
-                Token::Close(Bracket::Round),
-                Token::Open(Bracket::Curly),
-                Token::Close(Bracket::Curly),
+                Token::ScopeProbe,
+                Token::CloseExpr,
+                Token::OpenGroup,
+                Token::CloseGroup,
+                Token::OpenScope,
+                Token::CloseScope,
             ]
         );
     }
 
     #[test]
     fn lexer_tokenizes_custom_identifier() {
-        // a run of valid identifier characters becomes one custom ident
+        // a run of valid identifier characters becomes one identifier
         let tokens = tokenize("foo_bar1");
-        assert_eq!(tokens, vec![Token::Ident(Ident::Custom)]);
+        assert_eq!(tokens, vec![Token::Identifier]);
     }
 
     #[test]
     fn lexer_tokenizes_keywords() {
         // a known keyword resolves to its dedicated variant
         let tokens = tokenize("pub const");
-        assert_eq!(
-            tokens,
-            vec![Token::Ident(Ident::Pub), Token::Ident(Ident::Const)]
-        );
+        assert_eq!(tokens, vec![Token::Public, Token::Constant]);
     }
 
     #[test]
     fn lexer_treats_keyword_prefix_as_custom() {
-        // a prefix of a keyword is still just a custom identifier
+        // a prefix of a keyword is still just an identifier
         let tokens = tokenize("pu");
-        assert_eq!(tokens, vec![Token::Ident(Ident::Custom)]);
+        assert_eq!(tokens, vec![Token::Identifier]);
     }
 
     #[test]
     fn lexer_treats_keyword_superstring_as_custom() {
-        // an identifier that merely starts with a keyword stays custom
+        // an identifier that merely starts with a keyword stays an identifier
         // this also guards against indexing past the end of the keyword
         let tokens = tokenize("public");
-        assert_eq!(tokens, vec![Token::Ident(Ident::Custom)]);
+        assert_eq!(tokens, vec![Token::Identifier]);
     }
 
     #[test]
@@ -399,17 +402,17 @@ mod tests {
 
     #[test]
     fn lexer_tokenizes_unclosed_string_literal_at_end() {
-        // a string with no closing quote before the end is reported as unclosed
+        // a string with no closing quote before the end is invalid
         let tokens = tokenize("\"hi");
-        assert_eq!(tokens, vec![Token::UnclosedStringLiteral]);
+        assert_eq!(tokens, vec![Token::Invalid]);
     }
 
     #[test]
     fn lexer_tokenizes_unclosed_string_literal_at_newline() {
-        // a newline terminates an inline string as unclosed
+        // a newline terminates an inline string as invalid
         // the newline is left so later tokens can still see it
         let tokens = tokenize("\"hi\n");
-        assert_eq!(tokens, vec![Token::UnclosedStringLiteral]);
+        assert_eq!(tokens, vec![Token::Invalid]);
     }
 
     #[test]
@@ -423,7 +426,7 @@ mod tests {
     fn lexer_emits_trailing_identifier() {
         // an identifier that ends at the source boundary is still emitted
         let tokens = tokenize("foo");
-        assert_eq!(tokens, vec![Token::Ident(Ident::Custom)]);
+        assert_eq!(tokens, vec![Token::Identifier]);
     }
 
     #[test]
@@ -432,7 +435,7 @@ mod tests {
         // so it can still be extended, and flush resolves it afterwards
         let mut lexer = Lexer::new("foo");
         assert_eq!(lexer.next(), None);
-        assert_eq!(lexer.finish(), Some(Token::Ident(Ident::Custom)));
+        assert_eq!(lexer.finish(), Some(Token::Identifier));
     }
 
     #[test]
@@ -451,17 +454,14 @@ mod tests {
         assert_eq!(lexer.next(), None);
         let mut lexer = lexer.extend("b");
         assert_eq!(lexer.next(), None);
-        assert_eq!(lexer.finish(), Some(Token::Ident(Ident::Pub)));
+        assert_eq!(lexer.finish(), Some(Token::Public));
     }
 
     #[test]
     fn lexer_skips_whitespace() {
         // whitespace separates tokens but produces none of its own
         let tokens = tokenize("  foo \t bar\n");
-        assert_eq!(
-            tokens,
-            vec![Token::Ident(Ident::Custom), Token::Ident(Ident::Custom)]
-        );
+        assert_eq!(tokens, vec![Token::Identifier, Token::Identifier]);
     }
 
     #[test]
@@ -490,11 +490,7 @@ mod tests {
         let tokens = tokenize("foo.bar");
         assert_eq!(
             tokens,
-            vec![
-                Token::Ident(Ident::Custom),
-                Token::Point,
-                Token::Ident(Ident::Custom),
-            ]
+            vec![Token::Identifier, Token::MemberProbe, Token::Identifier]
         );
     }
 
