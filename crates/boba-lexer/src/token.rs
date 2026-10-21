@@ -18,7 +18,7 @@ pub enum Token {
     Public,
 
     // operators
-    Equality,
+    Assign,
     ScopeProbe,
     MemberProbe,
 }

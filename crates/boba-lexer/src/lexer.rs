@@ -172,7 +172,7 @@ impl TokenBuilder {
                 // immediately consume and return simple char tokens
                 '.' => BuildState::Consumed(Token::MemberProbe),
                 ',' => BuildState::Consumed(Token::Delimiter),
-                '=' => BuildState::Consumed(Token::Equality),
+                '=' => BuildState::Consumed(Token::Assign),
                 ':' => BuildState::Consumed(Token::ScopeProbe),
                 ';' => BuildState::Consumed(Token::CloseExpr),
                 '(' => BuildState::Consumed(Token::OpenGroup),
@@ -346,7 +346,7 @@ mod tests {
             vec![
                 Token::MemberProbe,
                 Token::Delimiter,
-                Token::Equality,
+                Token::Assign,
                 Token::ScopeProbe,
                 Token::CloseExpr,
                 Token::OpenGroup,
