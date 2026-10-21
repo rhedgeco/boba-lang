@@ -1,0 +1,11 @@
+// there are no multiline comments
+// only comments that start with // on each line
+
+const message = \\ multiline strings are very similar to comments
+                \\ they are constructed with a leading double backslash
+                \\ this informs the multiline string where the start of the line is
+                \\ and lets the parser know that here to the end of the line is string
+                \\ this also allows each line of code to be parsed in isolation
+                \\ since the string only ends at a newline
+                \\ the semicolon must go on the next line
+                ;

@@ -53,6 +53,11 @@ impl<T> BuildState<T> {
 struct NewlineBuilder;
 
 impl NewlineBuilder {
+    /// Immediately resolve the newline trivia
+    pub fn finish(self) -> ParseToken {
+        Trivia::Newline.into()
+    }
+
     /// Injects a character, and attempts to build a newline trivia
     pub fn build(self, c: char) -> BuildState<Self> {
         match c {
@@ -62,17 +67,17 @@ impl NewlineBuilder {
             _ => BuildState::Bail(self.finish()),
         }
     }
-
-    /// Immediately resolve the newline trivia
-    pub fn finish(self) -> ParseToken {
-        Trivia::Newline.into()
-    }
 }
 
 /// Builds a divide token or comment trivia out of characters
-struct SlashBuilder;
+struct ForwardSlashBuilder;
 
-impl SlashBuilder {
+impl ForwardSlashBuilder {
+    /// Immediately resolve the divide token
+    pub fn finish(self) -> ParseToken {
+        Token::Divide.into()
+    }
+
     /// Injects a character, and attempts to build a divide token or comment trivia
     pub fn build(self, c: char) -> BuildState<CommentBuilder> {
         match c {
@@ -82,10 +87,45 @@ impl SlashBuilder {
             _ => BuildState::Bail(self.finish()),
         }
     }
+}
 
-    /// Immediately resolve the divide token
+/// Builds a multiline string out of characters, starting from a backslash
+struct BackSlashBuilder;
+
+impl BackSlashBuilder {
+    /// Immediately resolve the backslash as an invalid token
     pub fn finish(self) -> ParseToken {
-        Token::Divide.into()
+        Trivia::Invalid.into()
+    }
+
+    /// Injects a character, and attempts to start a multiline string
+    pub fn build(self, c: char) -> BuildState<MultiLineStrBuilder> {
+        match c {
+            // if we get another backslash, then we can officially start the string
+            '\\' => BuildState::Pending(MultiLineStrBuilder),
+            // otherwise we bail on any other token
+            _ => BuildState::Bail(self.finish()),
+        }
+    }
+}
+
+/// Builds a multiline string token out of characters
+struct MultiLineStrBuilder;
+
+impl MultiLineStrBuilder {
+    /// Immediately resolve the multiline string token
+    pub fn finish(self) -> ParseToken {
+        Token::MultiLineStrLiteral.into()
+    }
+
+    /// Injects a character, and attempts to build a multiline string token
+    pub fn build(self, c: char) -> BuildState<MultiLineStrBuilder> {
+        match c {
+            // if we get a newline character, then this part of the multiline string is complete
+            '\r' | '\n' => BuildState::Bail(self.finish()),
+            // otherwise literally any other character is acceptable
+            _ => BuildState::Pending(self),
+        }
     }
 }
 
@@ -93,6 +133,11 @@ impl SlashBuilder {
 struct CommentBuilder;
 
 impl CommentBuilder {
+    /// Immediately resolve the comment trivia
+    pub fn finish(self) -> ParseToken {
+        Trivia::Comment.into()
+    }
+
     /// Injects a character, and attempts to build a comment trivia
     pub fn build(self, c: char) -> BuildState<Self> {
         match c {
@@ -101,11 +146,6 @@ impl CommentBuilder {
             // otherwise literally any other character is acceptable
             _ => BuildState::Pending(self),
         }
-    }
-
-    /// Immediately resolve the comment trivia
-    pub fn finish(self) -> ParseToken {
-        Trivia::Comment.into()
     }
 }
 
@@ -161,6 +201,18 @@ impl IdentBuilder {
         }
     }
 
+    /// Immediately resolve the identifier into a token
+    pub fn finish(self) -> ParseToken {
+        // Resolves the tracked keyword, downgrading incomplete prefixes to identifier
+        // A prefix like "pu" matches so far but is not the full "pub" keyword.
+        match self.ident {
+            Ident::Pub if self.length == Ident::PUB_CHARS.len() => Token::Public.into(),
+            Ident::Let if self.length == Ident::LET_CHARS.len() => Token::Runtime.into(),
+            Ident::Const if self.length == Ident::CONST_CHARS.len() => Token::Constant.into(),
+            _ => Token::Identifier.into(),
+        }
+    }
+
     /// Injects a character, and attempts to build an ident token
     pub fn build(mut self, c: char) -> BuildState<Self> {
         // if the character is not a valid body character
@@ -180,29 +232,22 @@ impl IdentBuilder {
 
         BuildState::Pending(self)
     }
-
-    /// Immediately resolve the identifier into a token
-    pub fn finish(self) -> ParseToken {
-        // Resolves the tracked keyword, downgrading incomplete prefixes to identifier
-        // A prefix like "pu" matches so far but is not the full "pub" keyword.
-        match self.ident {
-            Ident::Pub if self.length == Ident::PUB_CHARS.len() => Token::Public.into(),
-            Ident::Let if self.length == Ident::LET_CHARS.len() => Token::Runtime.into(),
-            Ident::Const if self.length == Ident::CONST_CHARS.len() => Token::Constant.into(),
-            _ => Token::Identifier.into(),
-        }
-    }
 }
 
 /// Builds an inline string token out of chars
-struct InlineStringBuilder {
+struct InlineStrBuilder {
     escaping: bool,
 }
 
-impl InlineStringBuilder {
+impl InlineStrBuilder {
     /// Returns a new empty inline string builder
     pub fn new() -> Self {
         Self { escaping: false }
+    }
+
+    /// Immediately resolve the string a an unclosed literal
+    pub fn finish(self) -> ParseToken {
+        Trivia::Invalid.into()
     }
 
     /// Injects a character, and attempts to build an inline string token
@@ -219,7 +264,7 @@ impl InlineStringBuilder {
             // if not currently escaping, quotes close the string
             // the quotation char should be consumed in the process
             '"' if !self.escaping => {
-                return BuildState::Consumed(Token::StrLiteral.into());
+                return BuildState::Consumed(Token::InlineStrLiteral.into());
             }
 
             // any other character regardless of escape status is valid
@@ -229,33 +274,32 @@ impl InlineStringBuilder {
 
         BuildState::Pending(self)
     }
-
-    /// Immediately resolve the string a an unclosed literal
-    pub fn finish(self) -> ParseToken {
-        Trivia::Invalid.into()
-    }
 }
 
 #[derive(From)]
 enum TokenBuilder {
     Clear,
     Ident(IdentBuilder),
-    InlineString(InlineStringBuilder),
-    SlashBuilder(SlashBuilder),
-    CommentBuilder(CommentBuilder),
-    NewlineBuilder(NewlineBuilder),
+    InlineStr(InlineStrBuilder),
+    MultiLineStr(MultiLineStrBuilder),
+    ForwardSlash(ForwardSlashBuilder),
+    BackSlash(BackSlashBuilder),
+    Comment(CommentBuilder),
+    Newline(NewlineBuilder),
 }
 
 impl TokenBuilder {
     /// Injects a character, and attempts to build a token
     pub fn build(self, c: char) -> BuildState<Self> {
         match self {
-            TokenBuilder::Ident(builder) => builder.build(c).map(Into::into),
-            TokenBuilder::InlineString(builder) => builder.build(c).map(Into::into),
-            TokenBuilder::SlashBuilder(builder) => builder.build(c).map(Into::into),
-            TokenBuilder::CommentBuilder(builder) => builder.build(c).map(Into::into),
-            TokenBuilder::NewlineBuilder(builder) => builder.build(c).map(Into::into),
-            TokenBuilder::Clear => match c {
+            Self::Ident(builder) => builder.build(c).map(Into::into),
+            Self::InlineStr(builder) => builder.build(c).map(Into::into),
+            Self::MultiLineStr(builder) => builder.build(c).map(Into::into),
+            Self::ForwardSlash(builder) => builder.build(c).map(Into::into),
+            Self::BackSlash(builder) => builder.build(c).map(Into::into),
+            Self::Comment(builder) => builder.build(c).map(Into::into),
+            Self::Newline(builder) => builder.build(c).map(Into::into),
+            Self::Clear => match c {
                 // immediately consume and return simple char tokens
                 ' ' => BuildState::Consumed(Trivia::Space.into()),
                 '.' => BuildState::Consumed(Token::MemberAccess.into()),
@@ -271,8 +315,9 @@ impl TokenBuilder {
                 '\n' => BuildState::Consumed(Trivia::Newline.into()),
 
                 // specific starting characters trigger specific builders
-                '/' => BuildState::Pending(SlashBuilder.into()),
-                '"' => BuildState::Pending(InlineStringBuilder::new().into()),
+                '/' => BuildState::Pending(ForwardSlashBuilder.into()),
+                '"' => BuildState::Pending(InlineStrBuilder::new().into()),
+                '\\' => BuildState::Pending(BackSlashBuilder.into()),
                 '\r' => BuildState::Pending(NewlineBuilder.into()),
 
                 // lastly, try to build an identifier with any other character
@@ -291,12 +336,14 @@ impl TokenBuilder {
     /// An empty builder has nothing pending and yields no token
     pub fn finish(self) -> Option<ParseToken> {
         match self {
-            TokenBuilder::Clear => None,
-            TokenBuilder::Ident(builder) => Some(builder.finish()),
-            TokenBuilder::InlineString(builder) => Some(builder.finish()),
-            TokenBuilder::SlashBuilder(builder) => Some(builder.finish()),
-            TokenBuilder::CommentBuilder(builder) => Some(builder.finish()),
-            TokenBuilder::NewlineBuilder(builder) => Some(builder.finish()),
+            Self::Clear => None,
+            Self::Ident(builder) => Some(builder.finish()),
+            Self::InlineStr(builder) => Some(builder.finish()),
+            Self::MultiLineStr(builder) => Some(builder.finish()),
+            Self::ForwardSlash(builder) => Some(builder.finish()),
+            Self::BackSlash(builder) => Some(builder.finish()),
+            Self::Comment(builder) => Some(builder.finish()),
+            Self::Newline(builder) => Some(builder.finish()),
         }
     }
 }
@@ -492,14 +539,14 @@ mod tests {
     fn lexer_tokenizes_closed_string_literal() {
         // a terminated string literal is a closed string token
         let tokens = tokenize("\"hi\"");
-        assert_eq!(tokens, vec![Token::StrLiteral.into()]);
+        assert_eq!(tokens, vec![Token::InlineStrLiteral.into()]);
     }
 
     #[test]
     fn lexer_tokenizes_escaped_quote_in_string() {
         // an escaped quote does not close the string
         let tokens = tokenize("\"a\\\"b\"");
-        assert_eq!(tokens, vec![Token::StrLiteral.into()]);
+        assert_eq!(tokens, vec![Token::InlineStrLiteral.into()]);
     }
 
     #[test]
@@ -515,6 +562,41 @@ mod tests {
         // the newline is left so later tokens can still see it
         let tokens = tokenize("\"hi\n");
         assert_eq!(tokens, vec![Trivia::Invalid.into(), Trivia::Newline.into()]);
+    }
+
+    #[test]
+    fn lexer_tokenizes_multiline_string_at_end() {
+        // a double backslash starts a multiline string that runs to the end
+        let tokens = tokenize("\\\\hello");
+        assert_eq!(tokens, vec![Token::MultiLineStrLiteral.into()]);
+    }
+
+    #[test]
+    fn lexer_tokenizes_multiline_string_at_newline() {
+        // a newline ends the multiline string, left for the next token
+        let tokens = tokenize("\\\\hello\n");
+        assert_eq!(
+            tokens,
+            vec![Token::MultiLineStrLiteral.into(), Trivia::Newline.into()]
+        );
+    }
+
+    #[test]
+    fn lexer_reports_lone_backslash_as_invalid() {
+        // a single backslash is not a multiline string and is invalid
+        let tokens = tokenize("\\");
+        assert_eq!(tokens, vec![Trivia::Invalid.into()]);
+    }
+
+    #[test]
+    fn lexer_reports_backslash_before_other_token_as_invalid() {
+        // a backslash not followed by another backslash bails as invalid
+        // the next character is left so it can still be lexed
+        let tokens = tokenize("\\foo");
+        assert_eq!(
+            tokens,
+            vec![Trivia::Invalid.into(), Token::Identifier.into()]
+        );
     }
 
     #[test]

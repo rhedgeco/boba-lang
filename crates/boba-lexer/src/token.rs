@@ -10,7 +10,8 @@ pub enum Token {
     CloseExpr,
 
     // identifiers and literals
-    StrLiteral,
+    InlineStrLiteral,
+    MultiLineStrLiteral,
     Identifier,
     Constant,
     Runtime,
