@@ -4,5 +4,4 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-derive_more = { version = "2.1", features = ["display"] }
-phf = { version = "0.14", features = ["macros"] }
+derive_more = { workspace = true, features = ["display"] }
