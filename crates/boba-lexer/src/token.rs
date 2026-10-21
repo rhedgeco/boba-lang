@@ -1,8 +1,6 @@
 /// A single token produced by a lexer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Token {
-    Invalid,
-
     // bracing tokens and delimiters
     OpenScope,
     CloseScope,
@@ -19,6 +17,7 @@ pub enum Token {
 
     // operators
     Assign,
-    ScopeProbe,
-    MemberProbe,
+    Divide,
+    ScopeAccess,
+    MemberAccess,
 }

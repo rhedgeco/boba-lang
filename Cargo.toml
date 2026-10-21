@@ -3,5 +3,9 @@ resolver = "3"
 members = ["crates/*"]
 
 [workspace.dependencies]
+# local crates
 boba-analyzer = { path = "crates/boba-analyzer" }
 boba-lexer = { path = "crates/boba-lexer" }
+
+# remote crates
+derive_more = "2.1"

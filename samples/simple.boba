@@ -1,19 +1,23 @@
+// everything item in a scope is assigned to a constant identifier
+
+// imports are just an assignment that call the `import()` function
 const std = import().std();
 
+// scopes can be assigned to a identifier to create a named sub-scope
 pub const module = {
+    // structs can be built using the `struct()` function
     pub const Hello = struct()
+        // fields can be assigned to the struct by chaining `field(...)`
         .field(name, str)
+        // structs can also contain scope associated data like functions
         .scope({
+            // functions are created the same way as everything else with the `func()` function
             pub const print = func().self().body({
+                // items can be extracted from a sub-scope (std-lib here) by using the color operator
+                // this inspects the subscope of the target, and accesses the named item from it
                 std:print("Hello, ");
                 std:print(self.name);
                 std:print("!");
             });
         });
-
-    pub const print = func().body({
-        std:print("Hello, ");
-        std:print(self.name);
-        std:print("!");
-    });
 };

@@ -1,13 +1,39 @@
 use std::{iter::Peekable, mem::replace, ops::Range, str::Chars};
 
+use derive_more::From;
+
 use crate::Token;
+
+/// Either a lexical or trivia token produced by a [`Lexer`].
+#[derive(Debug, From, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum ParseToken {
+    /// A valid lexical token.
+    Token(Token),
+    /// A supporting trivia token.
+    Trivia(Trivia),
+}
+
+/// Non lexical tokens produced by the lexer
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Trivia {
+    /// Source that does not form a valid token.
+    Invalid,
+    /// A line comment introduced with `//`.
+    Comment,
+    /// A line break, from either `\n`, `\r\n`, or just '\r'.
+    Newline,
+    /// A single space character.
+    Space,
+    /// A single tab character.
+    Tab,
+}
 
 /// Tracks the build state of a token producer.
 enum BuildState<T> {
     /// The character was consumed, and it produced a token.
-    Consumed(Token),
+    Consumed(ParseToken),
     /// The character was ignored, and it produced a token.
-    Bail(Token),
+    Bail(ParseToken),
     /// The character was consumed, and is still pending.
     Pending(T),
 }
@@ -20,6 +46,66 @@ impl<T> BuildState<T> {
             BuildState::Consumed(token) => BuildState::Consumed(token),
             BuildState::Pending(item) => BuildState::Pending(f(item)),
         }
+    }
+}
+
+/// Builds a newline trivia token out of characters
+struct NewlineBuilder;
+
+impl NewlineBuilder {
+    /// Injects a character, and attempts to build a newline trivia
+    pub fn build(self, c: char) -> BuildState<Self> {
+        match c {
+            // consume a trailing \n token
+            '\n' => BuildState::Consumed(self.finish()),
+            // but anything else is ignored
+            _ => BuildState::Bail(self.finish()),
+        }
+    }
+
+    /// Immediately resolve the newline trivia
+    pub fn finish(self) -> ParseToken {
+        Trivia::Newline.into()
+    }
+}
+
+/// Builds a divide token or comment trivia out of characters
+struct SlashBuilder;
+
+impl SlashBuilder {
+    /// Injects a character, and attempts to build a divide token or comment trivia
+    pub fn build(self, c: char) -> BuildState<CommentBuilder> {
+        match c {
+            // if we get a slash, then start processing the comment
+            '/' => BuildState::Pending(CommentBuilder),
+            // if we get anything else, then the slash is a divide
+            _ => BuildState::Bail(self.finish()),
+        }
+    }
+
+    /// Immediately resolve the divide token
+    pub fn finish(self) -> ParseToken {
+        Token::Divide.into()
+    }
+}
+
+/// Builds comment trivia out of characters
+struct CommentBuilder;
+
+impl CommentBuilder {
+    /// Injects a character, and attempts to build a comment trivia
+    pub fn build(self, c: char) -> BuildState<Self> {
+        match c {
+            // if we get a newline character, then the comment is complete
+            '\r' | '\n' => BuildState::Bail(self.finish()),
+            // otherwise literally any other character is acceptable
+            _ => BuildState::Pending(self),
+        }
+    }
+
+    /// Immediately resolve the comment trivia
+    pub fn finish(self) -> ParseToken {
+        Trivia::Comment.into()
     }
 }
 
@@ -90,13 +176,13 @@ impl IdentBuilder {
     }
 
     /// Immediately resolve the identifier into a token
-    pub fn finish(self) -> Token {
+    pub fn finish(self) -> ParseToken {
         // Resolves the tracked keyword, downgrading incomplete prefixes to identifier
         // A prefix like "pu" matches so far but is not the full "pub" keyword.
         match self.ident {
-            Ident::Pub if self.length == Ident::PUB_CHARS.len() => Token::Public,
-            Ident::Const if self.length == Ident::CONST_CHARS.len() => Token::Constant,
-            _ => Token::Identifier,
+            Ident::Pub if self.length == Ident::PUB_CHARS.len() => Token::Public.into(),
+            Ident::Const if self.length == Ident::CONST_CHARS.len() => Token::Constant.into(),
+            _ => Token::Identifier.into(),
         }
     }
 }
@@ -118,14 +204,16 @@ impl InlineStringBuilder {
             // newline tokens mean the inline string is unclosed
             // newlines cannot be escaped so this is unconditional
             // we bail here so the parser can detect the newline still
-            '\r' | '\n' => return BuildState::Bail(Token::Invalid),
-
-            // if not currently escaping, quotes close the string
-            // the quotation char should be consumed in the process
-            '"' if !self.escaping => return BuildState::Consumed(Token::StrLiteral),
+            '\r' | '\n' => return BuildState::Bail(Trivia::Invalid.into()),
 
             // escape characters start a new escape sequence if there isnt one already
             '\\' if !self.escaping => self.escaping = true,
+
+            // if not currently escaping, quotes close the string
+            // the quotation char should be consumed in the process
+            '"' if !self.escaping => {
+                return BuildState::Consumed(Token::StrLiteral.into());
+            }
 
             // any other character regardless of escape status is valid
             // in any case, the escape sequence should be reset to false
@@ -136,27 +224,19 @@ impl InlineStringBuilder {
     }
 
     /// Immediately resolve the string a an unclosed literal
-    pub fn finish(self) -> Token {
-        Token::Invalid
+    pub fn finish(self) -> ParseToken {
+        Trivia::Invalid.into()
     }
 }
 
+#[derive(From)]
 enum TokenBuilder {
     Clear,
     Ident(IdentBuilder),
     InlineString(InlineStringBuilder),
-}
-
-impl From<IdentBuilder> for TokenBuilder {
-    fn from(builder: IdentBuilder) -> Self {
-        Self::Ident(builder)
-    }
-}
-
-impl From<InlineStringBuilder> for TokenBuilder {
-    fn from(builder: InlineStringBuilder) -> Self {
-        Self::InlineString(builder)
-    }
+    SlashBuilder(SlashBuilder),
+    CommentBuilder(CommentBuilder),
+    NewlineBuilder(NewlineBuilder),
 }
 
 impl TokenBuilder {
@@ -165,30 +245,35 @@ impl TokenBuilder {
         match self {
             TokenBuilder::Ident(builder) => builder.build(c).map(Into::into),
             TokenBuilder::InlineString(builder) => builder.build(c).map(Into::into),
+            TokenBuilder::SlashBuilder(builder) => builder.build(c).map(Into::into),
+            TokenBuilder::CommentBuilder(builder) => builder.build(c).map(Into::into),
+            TokenBuilder::NewlineBuilder(builder) => builder.build(c).map(Into::into),
             TokenBuilder::Clear => match c {
-                // skip whitespace tokens
-                ' ' | '\r' | '\n' | '\t' => BuildState::Pending(TokenBuilder::Clear),
-
                 // immediately consume and return simple char tokens
-                '.' => BuildState::Consumed(Token::MemberProbe),
-                ',' => BuildState::Consumed(Token::Delimiter),
-                '=' => BuildState::Consumed(Token::Assign),
-                ':' => BuildState::Consumed(Token::ScopeProbe),
-                ';' => BuildState::Consumed(Token::CloseExpr),
-                '(' => BuildState::Consumed(Token::OpenGroup),
-                ')' => BuildState::Consumed(Token::CloseGroup),
-                '{' => BuildState::Consumed(Token::OpenScope),
-                '}' => BuildState::Consumed(Token::CloseScope),
+                ' ' => BuildState::Consumed(Trivia::Space.into()),
+                '.' => BuildState::Consumed(Token::MemberAccess.into()),
+                ',' => BuildState::Consumed(Token::Delimiter.into()),
+                '=' => BuildState::Consumed(Token::Assign.into()),
+                ':' => BuildState::Consumed(Token::ScopeAccess.into()),
+                ';' => BuildState::Consumed(Token::CloseExpr.into()),
+                '(' => BuildState::Consumed(Token::OpenGroup.into()),
+                ')' => BuildState::Consumed(Token::CloseGroup.into()),
+                '{' => BuildState::Consumed(Token::OpenScope.into()),
+                '}' => BuildState::Consumed(Token::CloseScope.into()),
+                '\t' => BuildState::Consumed(Trivia::Tab.into()),
+                '\n' => BuildState::Consumed(Trivia::Newline.into()),
 
-                // start building an inline string if the character is a quote
-                '"' => BuildState::Pending(Self::InlineString(InlineStringBuilder::new())),
+                // specific starting characters trigger specific builders
+                '/' => BuildState::Pending(SlashBuilder.into()),
+                '"' => BuildState::Pending(InlineStringBuilder::new().into()),
+                '\r' => BuildState::Pending(NewlineBuilder.into()),
 
                 // lastly, try to build an identifier with any other character
                 c => match IdentBuilder::new(c) {
                     // if it is valid, then return the pending ident builder
                     Some(builder) => BuildState::Pending(builder.into()),
                     // if it is invalid, then consume the invalid token
-                    None => BuildState::Consumed(Token::Invalid),
+                    None => BuildState::Consumed(Trivia::Invalid.into()),
                 },
             },
         }
@@ -197,11 +282,14 @@ impl TokenBuilder {
     /// Immediately resolve the builder into any pending token
     ///
     /// An empty builder has nothing pending and yields no token
-    pub fn finish(self) -> Option<Token> {
+    pub fn finish(self) -> Option<ParseToken> {
         match self {
             TokenBuilder::Clear => None,
             TokenBuilder::Ident(builder) => Some(builder.finish()),
             TokenBuilder::InlineString(builder) => Some(builder.finish()),
+            TokenBuilder::SlashBuilder(builder) => Some(builder.finish()),
+            TokenBuilder::CommentBuilder(builder) => Some(builder.finish()),
+            TokenBuilder::NewlineBuilder(builder) => Some(builder.finish()),
         }
     }
 }
@@ -269,13 +357,13 @@ impl<'a> Lexer<'a> {
     /// Consumes the lexer and resolves any token still pending.
     ///
     /// Does not parse any more characters from the source text.
-    pub fn finish(self) -> Option<Token> {
+    pub fn finish(self) -> Option<ParseToken> {
         self.builder.finish()
     }
 }
 
 impl<'a> Iterator for Lexer<'a> {
-    type Item = Token;
+    type Item = ParseToken;
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
@@ -330,7 +418,7 @@ mod tests {
 
     // collects every token then flushes the final pending one, as a caller
     // would once it knows there is no more source to extend the lexer with
-    fn tokenize(source: &str) -> Vec<Token> {
+    fn tokenize(source: &str) -> Vec<ParseToken> {
         let mut lexer = Lexer::new(source);
         let mut tokens: Vec<_> = lexer.by_ref().collect();
         tokens.extend(lexer.finish());
@@ -344,15 +432,15 @@ mod tests {
         assert_eq!(
             tokens,
             vec![
-                Token::MemberProbe,
-                Token::Delimiter,
-                Token::Assign,
-                Token::ScopeProbe,
-                Token::CloseExpr,
-                Token::OpenGroup,
-                Token::CloseGroup,
-                Token::OpenScope,
-                Token::CloseScope,
+                Token::MemberAccess.into(),
+                Token::Delimiter.into(),
+                Token::Assign.into(),
+                Token::ScopeAccess.into(),
+                Token::CloseExpr.into(),
+                Token::OpenGroup.into(),
+                Token::CloseGroup.into(),
+                Token::OpenScope.into(),
+                Token::CloseScope.into(),
             ]
         );
     }
@@ -361,21 +449,28 @@ mod tests {
     fn lexer_tokenizes_custom_identifier() {
         // a run of valid identifier characters becomes one identifier
         let tokens = tokenize("foo_bar1");
-        assert_eq!(tokens, vec![Token::Identifier]);
+        assert_eq!(tokens, vec![Token::Identifier.into()]);
     }
 
     #[test]
     fn lexer_tokenizes_keywords() {
         // a known keyword resolves to its dedicated variant
         let tokens = tokenize("pub const");
-        assert_eq!(tokens, vec![Token::Public, Token::Constant]);
+        assert_eq!(
+            tokens,
+            vec![
+                Token::Public.into(),
+                Trivia::Space.into(),
+                Token::Constant.into()
+            ]
+        );
     }
 
     #[test]
     fn lexer_treats_keyword_prefix_as_custom() {
         // a prefix of a keyword is still just an identifier
         let tokens = tokenize("pu");
-        assert_eq!(tokens, vec![Token::Identifier]);
+        assert_eq!(tokens, vec![Token::Identifier.into()]);
     }
 
     #[test]
@@ -383,28 +478,28 @@ mod tests {
         // an identifier that merely starts with a keyword stays an identifier
         // this also guards against indexing past the end of the keyword
         let tokens = tokenize("public");
-        assert_eq!(tokens, vec![Token::Identifier]);
+        assert_eq!(tokens, vec![Token::Identifier.into()]);
     }
 
     #[test]
     fn lexer_tokenizes_closed_string_literal() {
         // a terminated string literal is a closed string token
         let tokens = tokenize("\"hi\"");
-        assert_eq!(tokens, vec![Token::StrLiteral]);
+        assert_eq!(tokens, vec![Token::StrLiteral.into()]);
     }
 
     #[test]
     fn lexer_tokenizes_escaped_quote_in_string() {
         // an escaped quote does not close the string
         let tokens = tokenize("\"a\\\"b\"");
-        assert_eq!(tokens, vec![Token::StrLiteral]);
+        assert_eq!(tokens, vec![Token::StrLiteral.into()]);
     }
 
     #[test]
     fn lexer_tokenizes_unclosed_string_literal_at_end() {
         // a string with no closing quote before the end is invalid
         let tokens = tokenize("\"hi");
-        assert_eq!(tokens, vec![Token::Invalid]);
+        assert_eq!(tokens, vec![Trivia::Invalid.into()]);
     }
 
     #[test]
@@ -412,21 +507,21 @@ mod tests {
         // a newline terminates an inline string as invalid
         // the newline is left so later tokens can still see it
         let tokens = tokenize("\"hi\n");
-        assert_eq!(tokens, vec![Token::Invalid]);
+        assert_eq!(tokens, vec![Trivia::Invalid.into(), Trivia::Newline.into()]);
     }
 
     #[test]
     fn lexer_reports_invalid_characters() {
         // unrecognised characters surface as invalid tokens
         let tokens = tokenize("$");
-        assert_eq!(tokens, vec![Token::Invalid]);
+        assert_eq!(tokens, vec![Trivia::Invalid.into()]);
     }
 
     #[test]
     fn lexer_emits_trailing_identifier() {
         // an identifier that ends at the source boundary is still emitted
         let tokens = tokenize("foo");
-        assert_eq!(tokens, vec![Token::Identifier]);
+        assert_eq!(tokens, vec![Token::Identifier.into()]);
     }
 
     #[test]
@@ -435,7 +530,7 @@ mod tests {
         // so it can still be extended, and flush resolves it afterwards
         let mut lexer = Lexer::new("foo");
         assert_eq!(lexer.next(), None);
-        assert_eq!(lexer.finish(), Some(Token::Identifier));
+        assert_eq!(lexer.finish(), Some(Token::Identifier.into()));
     }
 
     #[test]
@@ -454,14 +549,100 @@ mod tests {
         assert_eq!(lexer.next(), None);
         let mut lexer = lexer.extend("b");
         assert_eq!(lexer.next(), None);
-        assert_eq!(lexer.finish(), Some(Token::Public));
+        assert_eq!(lexer.finish(), Some(Token::Public.into()));
     }
 
     #[test]
-    fn lexer_skips_whitespace() {
-        // whitespace separates tokens but produces none of its own
+    fn lexer_emits_whitespace_as_trivia() {
+        // each whitespace character surfaces as its own trivia token
         let tokens = tokenize("  foo \t bar\n");
-        assert_eq!(tokens, vec![Token::Identifier, Token::Identifier]);
+        assert_eq!(
+            tokens,
+            vec![
+                Trivia::Space.into(),
+                Trivia::Space.into(),
+                Token::Identifier.into(),
+                Trivia::Space.into(),
+                Trivia::Tab.into(),
+                Trivia::Space.into(),
+                Token::Identifier.into(),
+                Trivia::Newline.into(),
+            ]
+        );
+    }
+
+    #[test]
+    fn lexer_tokenizes_newline_from_line_feed() {
+        // a bare line feed is a single newline trivia
+        let tokens = tokenize("\n");
+        assert_eq!(tokens, vec![Trivia::Newline.into()]);
+    }
+
+    #[test]
+    fn lexer_tokenizes_newline_from_carriage_return() {
+        // a carriage return followed by a line feed is one newline trivia
+        let tokens = tokenize("\r\n");
+        assert_eq!(tokens, vec![Trivia::Newline.into()]);
+    }
+
+    #[test]
+    fn lexer_tokenizes_lone_carriage_return_as_newline() {
+        // a carriage return alone still resolves to a newline trivia
+        // the following character is bailed so it can be lexed next
+        let tokens = tokenize("\rfoo");
+        assert_eq!(
+            tokens,
+            vec![Trivia::Newline.into(), Token::Identifier.into()]
+        );
+    }
+
+    #[test]
+    fn lexer_tokenizes_divide_operator() {
+        // a lone slash that is not a comment is a divide operator
+        let tokens = tokenize("/");
+        assert_eq!(tokens, vec![Token::Divide.into()]);
+    }
+
+    #[test]
+    fn lexer_tokenizes_divide_before_other_token() {
+        // a slash followed by a non-slash bails, leaving the next char to lex
+        let tokens = tokenize("/foo");
+        assert_eq!(tokens, vec![Token::Divide.into(), Token::Identifier.into()]);
+    }
+
+    #[test]
+    fn lexer_tokenizes_comment() {
+        // a double slash starts a comment that runs to the end of source
+        let tokens = tokenize("// a comment");
+        assert_eq!(tokens, vec![Trivia::Comment.into()]);
+    }
+
+    #[test]
+    fn lexer_stops_comment_at_newline() {
+        // a comment ends at a newline, which is left for the next token
+        let tokens = tokenize("// comment\nfoo");
+        assert_eq!(
+            tokens,
+            vec![
+                Trivia::Comment.into(),
+                Trivia::Newline.into(),
+                Token::Identifier.into()
+            ]
+        );
+    }
+
+    #[test]
+    fn lexer_stops_comment_at_carriage_return() {
+        // a lone carriage return also ends a comment, left for the next token
+        let tokens = tokenize("// comment\rfoo");
+        assert_eq!(
+            tokens,
+            vec![
+                Trivia::Comment.into(),
+                Trivia::Newline.into(),
+                Token::Identifier.into()
+            ]
+        );
     }
 
     #[test]
@@ -475,10 +656,15 @@ mod tests {
 
     #[test]
     fn lexer_advances_range_per_token() {
-        // leading whitespace is excluded and the range moves with each token
+        // the range moves to cover each token, including whitespace trivia
         let mut lexer = Lexer::new("foo  bar");
         lexer.next();
         assert_eq!(lexer.token_source(), "foo");
+        // step past the two spaces separating the identifiers
+        lexer.next();
+        assert_eq!(lexer.range(), 3..4);
+        assert_eq!(lexer.token_source(), " ");
+        lexer.next();
         lexer.next();
         assert_eq!(lexer.range(), 5..8);
         assert_eq!(lexer.token_source(), "bar");
@@ -490,7 +676,11 @@ mod tests {
         let tokens = tokenize("foo.bar");
         assert_eq!(
             tokens,
-            vec![Token::Identifier, Token::MemberProbe, Token::Identifier]
+            vec![
+                Token::Identifier.into(),
+                Token::MemberAccess.into(),
+                Token::Identifier.into()
+            ]
         );
     }
 
