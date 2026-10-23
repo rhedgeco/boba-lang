@@ -2,6 +2,16 @@ use boba_token::Token;
 
 use crate::{LexerBuilder, LexerOutput, LexerResult};
 
+/// Returns true if the character can start an identifier.
+pub const fn is_valid_ident_start(c: char) -> bool {
+    matches!(c, '_' | 'a'..='z' | 'A'..='Z')
+}
+
+/// Returns true if the character can continue an identifier.
+pub const fn is_valid_ident_body(c: char) -> bool {
+    matches!(c, '_' | 'a'..='z' | 'A'..='Z' | '0'..='9')
+}
+
 /// Builds an identifier token out of characters.
 #[derive(Debug, Default, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct IdentLexer;
@@ -9,7 +19,7 @@ pub struct IdentLexer;
 impl IdentLexer {
     /// Returns true if the character can start an identifier.
     pub const fn primer(c: char) -> bool {
-        matches!(c, '_' | 'a'..='z' | 'A'..='Z')
+        is_valid_ident_start(c)
     }
 }
 
@@ -21,7 +31,7 @@ impl LexerBuilder for IdentLexer {
     }
 
     fn build(self, c: char) -> LexerResult<Self::NextState> {
-        if !matches!(c, '_' | 'a'..='z' | 'A'..='Z' | '0'..='9') {
+        if !is_valid_ident_body(c) {
             return LexerResult::Bail(Token::Identifier.into());
         }
 
@@ -47,6 +57,37 @@ mod tests {
         // identifiers may not start with a digit or a symbol
         assert!(!IdentLexer::primer('1'));
         assert!(!IdentLexer::primer('$'));
+    }
+
+    #[test]
+    fn is_valid_ident_start_accepts_letters_and_underscore() {
+        // a start character may be a letter or an underscore
+        assert!(is_valid_ident_start('a'));
+        assert!(is_valid_ident_start('Z'));
+        assert!(is_valid_ident_start('_'));
+    }
+
+    #[test]
+    fn is_valid_ident_start_rejects_digits_and_symbols() {
+        // a start character may not be a digit or a symbol
+        assert!(!is_valid_ident_start('1'));
+        assert!(!is_valid_ident_start('$'));
+    }
+
+    #[test]
+    fn is_valid_ident_body_accepts_alphanumerics_and_underscore() {
+        // a body character may be a letter, a digit, or an underscore
+        assert!(is_valid_ident_body('a'));
+        assert!(is_valid_ident_body('Z'));
+        assert!(is_valid_ident_body('_'));
+        assert!(is_valid_ident_body('9'));
+    }
+
+    #[test]
+    fn is_valid_ident_body_rejects_symbols() {
+        // a body character may not be a symbol
+        assert!(!is_valid_ident_body('$'));
+        assert!(!is_valid_ident_body('.'));
     }
 
     #[test]
