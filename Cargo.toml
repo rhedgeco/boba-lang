@@ -6,6 +6,7 @@ members = ["crates/*"]
 # local crates
 boba-analyzer = { path = "crates/boba-analyzer" }
 boba-lexer = { path = "crates/boba-lexer" }
+boba-token = { path = "crates/boba-token" }
 
 # remote crates
 derive_more = "2.1"

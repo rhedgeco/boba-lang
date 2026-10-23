@@ -1,5 +1,7 @@
-/// A single token produced by a lexer.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+use derive_more::Display;
+
+/// A generic token for constructing the boba language
+#[derive(Debug, Display, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Token {
     // bracing tokens and delimiters
     OpenScope,
@@ -10,6 +12,8 @@ pub enum Token {
     CloseExpr,
 
     // identifiers and literals
+    FloatLiteral,
+    IntegerLiteral,
     InlineStrLiteral,
     MultiLineStrLiteral,
     Identifier,
@@ -19,7 +23,11 @@ pub enum Token {
 
     // operators
     Assign,
+    Add,
+    Subtract,
+    Multiply,
     Divide,
+    Modulo,
     AccessScope,
     AccessMember,
 }
