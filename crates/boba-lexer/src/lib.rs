@@ -6,8 +6,13 @@ pub use boba_token::Token;
 use derive_more::From;
 
 use crate::{
-    backslash::BackSlashLexer, comment::CommentLexer, ident::IdentLexer,
-    inline_string::InlineStringLexer, multiline_string::MultilineStrLexer, newline::NewlineLexer,
+    backslash::BackSlashLexer,
+    comment::CommentLexer,
+    ident::IdentLexer,
+    inline_string::InlineStringLexer,
+    keyword::{Constant, KeywordInfo, KeywordLexer, Public, Variable},
+    multiline_string::MultilineStrLexer,
+    newline::NewlineLexer,
     slash::SlashLexer,
 };
 
@@ -15,6 +20,7 @@ pub mod backslash;
 pub mod comment;
 pub mod ident;
 pub mod inline_string;
+pub mod keyword;
 pub mod multiline_string;
 pub mod newline;
 pub mod slash;
@@ -95,6 +101,9 @@ enum LexerState {
     #[default]
     Empty,
     Ident(IdentLexer),
+    Public(KeywordLexer<Public>),
+    Variable(KeywordLexer<Variable>),
+    Constant(KeywordLexer<Constant>),
     Newline(NewlineLexer),
     InlineStr(InlineStringLexer),
     Slash(SlashLexer),
@@ -110,6 +119,9 @@ impl LexerBuilder for LexerState {
         match self {
             Self::Empty => None,
             Self::Ident(lexer) => lexer.finish(),
+            Self::Public(lexer) => lexer.finish(),
+            Self::Variable(lexer) => lexer.finish(),
+            Self::Constant(lexer) => lexer.finish(),
             Self::Newline(lexer) => lexer.finish(),
             Self::InlineStr(lexer) => lexer.finish(),
             Self::Slash(lexer) => lexer.finish(),
@@ -130,6 +142,9 @@ impl LexerBuilder for LexerState {
         match self {
             // try to build any lexer state that is currently active
             LexerState::Ident(lexer) => lexer.build(c).map_into(),
+            LexerState::Public(lexer) => lexer.build(c).map_into(),
+            LexerState::Variable(lexer) => lexer.build(c).map_into(),
+            LexerState::Constant(lexer) => lexer.build(c).map_into(),
             LexerState::Newline(lexer) => lexer.build(c).map_into(),
             LexerState::InlineStr(lexer) => lexer.build(c).map_into(),
             LexerState::Slash(lexer) => lexer.build(c).map_into(),
@@ -162,6 +177,9 @@ impl LexerBuilder for LexerState {
                 InlineStringLexer::PRIMER => LexerResult::Next(InlineStringLexer::new().into()),
                 SlashLexer::PRIMER => LexerResult::Next(SlashLexer.into()),
                 BackSlashLexer::PRIMER => LexerResult::Next(BackSlashLexer.into()),
+                Public::PRIMER => LexerResult::Next(KeywordLexer::<Public>::primed().into()),
+                Variable::PRIMER => LexerResult::Next(KeywordLexer::<Variable>::primed().into()),
+                Constant::PRIMER => LexerResult::Next(KeywordLexer::<Constant>::primed().into()),
 
                 // and some lexers have to be primed with a function
                 c if IdentLexer::primer(c) => LexerResult::Next(IdentLexer.into()),
