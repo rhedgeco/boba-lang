@@ -34,10 +34,10 @@ const sub_scope = {
 
 // even the main function is just another const assignment function
 pub const main = func().build({
-    // let assignments are used for runtime assignments
+    // var assignments are used for runtime variable assignment
     // since all the fields are public on Hello
     // it can just be constructed like this
-    let hello = sub_scope:Hello("Ryan");
+    var hello = sub_scope:Hello("Ryan");
 
     // and then the print function from sub_scope can be called with the struct
     sub_scope:print_hello(hello);
