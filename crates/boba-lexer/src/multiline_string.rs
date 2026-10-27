@@ -2,7 +2,10 @@
 
 use boba_token::Token;
 
-use crate::{LexerOutput, LexerResult, LexerState, iter::PeekableChar};
+use crate::{
+    LexerOutput, LexerResult, LexerState,
+    iter::{PeekableChar, PeekableCharExt},
+};
 
 /// Finishes the multiline string as a multiline string token.
 pub fn finish() -> LexerOutput {
@@ -14,21 +17,15 @@ pub fn finish() -> LexerOutput {
 /// A newline ends the string.
 /// Any other character is part of the string body.
 pub fn parse_next(mut input: impl PeekableChar) -> LexerResult {
-    while let Some(next_char) = input.peek() {
-        return match next_char {
-            // a newline means the string parsing is over, finish the string now
-            '\r' | '\n' => finish().into(),
-
-            // any other character is valid for the string
-            _ => {
-                let _ = input.next();
-                continue;
-            }
+    loop {
+        // try to peek the next char, returning a pending string if failed
+        match input.peek_or(LexerState::MultilineString)? {
+            // if the character is a newline, return the finished string
+            '\r' | '\n' => return finish().into(),
+            // otherwise consume and try again
+            _ => input.consume(),
         };
     }
-
-    // if we run out of chars, then the string is still pending
-    LexerState::MultilineString.into()
 }
 
 #[cfg(test)]

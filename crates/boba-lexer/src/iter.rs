@@ -2,7 +2,7 @@
 
 use boba_token::Token;
 
-use crate::{LexerOutput, Trivia};
+use crate::{LexerOutput, LexerState, Trivia};
 
 /// A character iterator that can look at the next character without consuming it.
 ///
@@ -30,6 +30,45 @@ where
         std::iter::Peekable::peek(self).copied()
     }
 }
+
+/// Convenience methods for consuming and peeking a [`PeekableChar`].
+pub trait PeekableCharExt: PeekableChar {
+    /// Consumes the next character, discarding it.
+    fn consume(&mut self) {
+        let _ = self.next();
+    }
+
+    /// Consumes the next character, returning `and`.
+    ///
+    /// `and` is returned, even if there was no char to consume.
+    fn consume_and<T>(&mut self, and: T) -> T {
+        self.consume();
+        and
+    }
+
+    /// Consumes the next character, then calls `then` with this input.
+    fn consume_then<'a: 'b, 'b, T>(&'a mut self, then: impl FnOnce(&'b mut Self) -> T) -> T {
+        self.consume();
+        then(self)
+    }
+
+    /// Peeks the next character, returning [`Ok`] if it exists.
+    ///
+    /// Returns [`Err`] containing `or` if there was no next character.
+    fn peek_or(&mut self, or: LexerState) -> Result<char, LexerState> {
+        self.peek().ok_or(or)
+    }
+
+    /// Takes the next character, returning [`Ok`] if it exists.
+    ///
+    /// Returns [`Err`] containing `or` if there was no next character.
+    fn next_or(&mut self, or: LexerState) -> Result<char, LexerState> {
+        let next_char = self.peek_or(or)?;
+        let _ = self.next();
+        Ok(next_char)
+    }
+}
+impl<I: PeekableChar> PeekableCharExt for I {}
 
 /// An iterator that yields only the trivia from a stream of lexer output.
 ///

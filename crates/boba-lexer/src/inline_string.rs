@@ -2,7 +2,10 @@
 
 use boba_token::Token;
 
-use crate::{LexerOutput, LexerResult, LexerState, Trivia, iter::PeekableChar};
+use crate::{
+    LexerOutput, LexerResult, LexerState, Trivia,
+    iter::{PeekableChar, PeekableCharExt},
+};
 
 /// Finishes a string that was never closed as unclosed string trivia.
 pub fn finish_unclosed() -> LexerOutput {
@@ -14,21 +17,33 @@ pub fn finish() -> LexerOutput {
     Token::InlineString.into()
 }
 
+/// Reports whether the next character can be escaped, without consuming it.
+///
+/// A newline cannot be escaped, so this returns `false`.
+/// Any other character can be escaped, so this returns `true`.
+/// Returns [`Err`] with the pending escape state if the input has no next character.
+pub fn can_escape(mut input: impl PeekableChar) -> Result<bool, LexerState> {
+    // try to get the next character, returning the pending escape state if there is none
+    Ok(match input.peek_or(LexerState::InlineEscape)? {
+        // return false on newline. newlines are invalid escape chars.
+        '\r' | '\n' => false,
+        // any other character can be escaped
+        _ => true,
+    })
+}
+
 /// Parses the character following a back slash escape within a string.
 ///
 /// A newline cannot be escaped and leaves the string unclosed.
 /// Any other character is accepted and parsing returns to the string body.
 pub fn parse_next_escape(mut input: impl PeekableChar) -> LexerResult {
-    match input.peek().ok_or(LexerState::InlineEscape)? {
-        // a newline cannot be escaped, finish the string now
-        '\r' | '\n' => finish_unclosed().into(),
-        // otherwise any other character is valid here
-        // and we go back to parsing the inline string
-        _ => {
-            let _ = input.next();
-            parse_next(input)
-        }
+    // if the next char can be escaped, consume and keep parsing the string
+    if can_escape(&mut input)? {
+        return input.consume_then(parse_next);
     }
+
+    // otherwise, return an unlcosed string
+    finish_unclosed().into()
 }
 
 /// Consumes the string body until it closes or the line ends.
@@ -38,33 +53,19 @@ pub fn parse_next_escape(mut input: impl PeekableChar) -> LexerResult {
 /// A newline leaves the string unclosed.
 /// Any other character is part of the string body.
 pub fn parse_next(mut input: impl PeekableChar) -> LexerResult {
-    while let Some(next_char) = input.peek() {
-        return match next_char {
-            // a newline means the string parsing is over, finish the string now
-            '\r' | '\n' => finish_unclosed().into(),
-
-            // start an escape sequence if we find a backslash
-            '\\' => {
-                let _ = input.next();
-                parse_next_escape(input)
-            }
-
+    loop {
+        match input.peek_or(LexerState::InlineString)? {
+            // a newline means the string parsing is over, finish and return the unclosed string now
+            '\r' | '\n' => return finish_unclosed().into(),
             // close the valid string if we find a quote
-            '"' => {
-                let _ = input.next();
-                finish().into()
-            }
-
-            // any other character is valid for the string
-            _ => {
-                let _ = input.next();
-                continue;
-            }
-        };
+            '"' => return input.consume_and(finish()).into(),
+            // try to escape the next character if we find a backslash
+            // if we cannot escape it, immediately return the unclosed string
+            '\\' if !input.consume_then(can_escape)? => return finish_unclosed().into(),
+            // any other character is valid for the string. consume it and continue
+            _ => input.consume(),
+        }
     }
-
-    // if we run out of chars, then the string is still pending
-    LexerState::InlineString.into()
 }
 
 #[cfg(test)]
@@ -110,6 +111,28 @@ mod tests {
     }
 
     #[test]
+    fn escaped_back_slash_is_consumed_as_the_escaped_char() {
+        // the second back slash is the escaped character, so the quote still closes the string
+        let mut input = "\\\\\"rest".chars().peekable();
+        let result = parse_next(&mut input);
+        assert_eq!(result, Ok(Token::InlineString.into()));
+        // only the two back slashes and the closing quote were consumed
+        assert_eq!(input.next(), Some('r'));
+    }
+
+    #[test]
+    fn escaped_newline_in_body_is_unclosed() {
+        // a newline following a back slash cannot be escaped, even mid body
+        for newline in ['\n', '\r'] {
+            let mut input = ['a', '\\', newline].into_iter().peekable();
+            let result = parse_next(&mut input);
+            assert_eq!(result, Ok(Trivia::UnclosedStr.into()));
+            // the unescapable newline is left in place for the next token
+            assert_eq!(input.next(), Some(newline));
+        }
+    }
+
+    #[test]
     fn empty_input_is_pending() {
         let mut input = "".chars().peekable();
         assert_eq!(parse_next(&mut input), Err(LexerState::InlineString));
@@ -137,5 +160,26 @@ mod tests {
     fn escape_with_empty_input_is_pending() {
         let mut input = "".chars().peekable();
         assert_eq!(parse_next_escape(&mut input), Err(LexerState::InlineEscape));
+    }
+
+    #[test]
+    fn long_body_does_not_overflow_the_stack() {
+        // the body is consumed in a loop, so a huge string stays in constant stack
+        // the input is generated lazily to avoid allocating the whole body
+        let mut input = std::iter::repeat_n('a', 1_000_000)
+            .chain(std::iter::once('"'))
+            .peekable();
+        assert_eq!(parse_next(&mut input), Ok(Token::InlineString.into()));
+    }
+
+    #[test]
+    fn long_escape_run_does_not_overflow_the_stack() {
+        // every escape is handled in place, so an all escape body also stays in constant stack
+        // each unit is a back slash followed by its escaped character
+        let mut input = std::iter::repeat_n(['\\', 'a'], 1_000_000)
+            .flatten()
+            .chain(std::iter::once('"'))
+            .peekable();
+        assert_eq!(parse_next(&mut input), Ok(Token::InlineString.into()));
     }
 }

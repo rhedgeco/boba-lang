@@ -2,7 +2,10 @@
 
 use boba_token::Token;
 
-use crate::{LexerOutput, LexerResult, LexerState, comment, iter::PeekableChar};
+use crate::{
+    LexerOutput, LexerResult, LexerState, comment,
+    iter::{PeekableChar, PeekableCharExt},
+};
 
 /// Finishes a lone forward slash as a divide token.
 pub fn finish() -> LexerOutput {
@@ -14,17 +17,13 @@ pub fn finish() -> LexerOutput {
 /// A following forward slash begins a comment.
 /// Anything else finishes the forward slash as a divide token.
 pub fn parse_next(mut input: impl PeekableChar) -> LexerResult {
-    let next_char = input.peek().ok_or(LexerState::ForwardSlash)?;
-
-    // if the next character is another forward slash
-    // then we should start parsing the comment
-    if next_char == '/' {
-        let _ = input.next();
-        return comment::parse_next(input);
+    match input.peek_or(LexerState::ForwardSlash)? {
+        // if the next character is another forward slash
+        // then we should start parsing the comment
+        '/' => input.consume_then(comment::parse_next),
+        // otherwise just finish the forward slash as is
+        _ => finish().into(),
     }
-
-    // otherwise just finish the forward slash as is
-    finish().into()
 }
 
 #[cfg(test)]

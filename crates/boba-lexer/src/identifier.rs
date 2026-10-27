@@ -2,7 +2,10 @@
 
 use boba_token::Token;
 
-use crate::{LexerOutput, LexerResult, LexerState, iter::PeekableChar};
+use crate::{
+    LexerOutput, LexerResult, LexerState,
+    iter::{PeekableChar, PeekableCharExt},
+};
 
 /// Returns whether a character may start an identifier.
 pub const fn is_valid_start(c: char) -> bool {
@@ -24,18 +27,15 @@ pub fn finish() -> LexerOutput {
 /// Each valid body character is consumed.
 /// The first invalid character ends the identifier and is left in place.
 pub fn parse_next(mut input: impl PeekableChar) -> LexerResult {
-    while let Some(next_char) = input.peek() {
-        // if the character is not valid, finish the identifier
-        if !is_valid_body(next_char) {
+    loop {
+        // if the next character is not valid, finish the identifier
+        if !is_valid_body(input.peek_or(LexerState::Identifier)?) {
             return finish().into();
         }
 
         // otherwise consume the character and continue
-        let _ = input.next();
+        input.consume();
     }
-
-    // if we run out of chars, then the identifier is still pending
-    LexerState::Identifier.into()
 }
 
 #[cfg(test)]

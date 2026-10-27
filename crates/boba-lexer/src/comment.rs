@@ -1,6 +1,9 @@
 //! Parsing for line comments introduced with `//`.
 
-use crate::{LexerOutput, LexerResult, LexerState, Trivia, iter::PeekableChar};
+use crate::{
+    LexerOutput, LexerResult, LexerState, Trivia,
+    iter::{PeekableChar, PeekableCharExt},
+};
 
 /// Finishes the comment as a comment trivia token.
 pub fn finish() -> LexerOutput {
@@ -12,20 +15,15 @@ pub fn finish() -> LexerOutput {
 /// A newline ends the comment.
 /// Any other character is consumed as part of the comment body.
 pub fn parse_next(mut input: impl PeekableChar) -> LexerResult {
-    while let Some(next_char) = input.peek() {
-        return match next_char {
-            // if the character is a newline, finish the comment
-            '\r' | '\n' => finish().into(),
-            // otherwise keep consuming until the end of line
-            _ => {
-                let _ = input.next();
-                continue;
-            }
+    loop {
+        // try to peek the next char, returning a pending comment if failed
+        match input.peek_or(LexerState::Comment)? {
+            // if the character is a newline, return the finished comment
+            '\r' | '\n' => return finish().into(),
+            // otherwise consume and try again
+            _ => input.consume(),
         };
     }
-
-    // if we run out of chars, then the comment is still pending
-    LexerState::Comment.into()
 }
 
 #[cfg(test)]

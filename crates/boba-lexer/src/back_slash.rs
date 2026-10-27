@@ -1,6 +1,10 @@
 //! Parsing for back slashes, which may begin a multiline string.
 
-use crate::{LexerOutput, LexerResult, LexerState, Trivia, iter::PeekableChar, multiline_string};
+use crate::{
+    LexerOutput, LexerResult, LexerState, Trivia,
+    iter::{PeekableChar, PeekableCharExt},
+    multiline_string,
+};
 
 /// Finishes a lone back slash as an invalid token.
 pub fn finish() -> LexerOutput {
@@ -12,17 +16,13 @@ pub fn finish() -> LexerOutput {
 /// A following back slash begins a multiline string.
 /// Anything else finishes the back slash as an invalid token.
 pub fn parse_next(mut input: impl PeekableChar) -> LexerResult {
-    let next_char = input.peek().ok_or(LexerState::BackSlash)?;
-
-    // if the next character is another back slash
-    // then we should start parsing the multiline string
-    if next_char == '\\' {
-        let _ = input.next();
-        return multiline_string::parse_next(input);
+    match input.peek_or(LexerState::BackSlash)? {
+        // if the next character is another back slash
+        // then we should start parsing the multiline string
+        '\\' => input.consume_then(multiline_string::parse_next),
+        // otherwise just finish the back slash as is
+        _ => finish().into(),
     }
-
-    // otherwise just finish the back slash as is
-    finish().into()
 }
 
 #[cfg(test)]

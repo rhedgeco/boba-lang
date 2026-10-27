@@ -3,9 +3,8 @@
 use std::num::NonZeroUsize;
 
 use crate::{
-    LexerOutput, LexerResult, LexerState,
-    identifier::{self, is_valid_body, is_valid_start},
-    iter::PeekableChar,
+    LexerOutput, LexerResult, LexerState, identifier,
+    iter::{PeekableChar, PeekableCharExt},
 };
 
 /// A keyword whose text is validated as a legal identifier.
@@ -61,7 +60,7 @@ impl<'a> KeywordStr<'a> {
         }
 
         // ensure the character is valid as an identifier start
-        if !is_valid_start(first_byte as char) {
+        if !identifier::is_valid_start(first_byte as char) {
             return None;
         }
 
@@ -75,7 +74,7 @@ impl<'a> KeywordStr<'a> {
             }
 
             // ensure the character is valid within an identifier body
-            if !is_valid_body(byte as char) {
+            if !identifier::is_valid_body(byte as char) {
                 return None;
             }
 
@@ -110,12 +109,12 @@ pub fn parse_next_keyword(
             // the next char diverges mid keyword, so this is an identifier
             (Some(char), Some(expected)) if char != expected => identifier::parse_next(input),
             // the keyword is complete but a body char follows, so this is a longer identifier
-            (Some(char), None) if is_valid_body(char) => identifier::parse_next(input),
+            (Some(char), None) if identifier::is_valid_body(char) => identifier::parse_next(input),
             // the keyword is complete and a boundary follows, so finish the keyword
             (Some(_), None) => finish(length).into(),
             // the next char continues the keyword, so consume it and move on
             (Some(_), Some(_)) => {
-                let _ = input.next();
+                input.consume();
                 length = length.saturating_add(1);
                 continue;
             }
