@@ -3,9 +3,6 @@
 use std::iter::Peekable;
 use std::num::NonZeroUsize;
 
-// re-export token for convenience
-pub use boba_token::Token;
-
 use derive_more::From;
 
 pub mod back_slash;
@@ -17,23 +14,8 @@ pub mod keyword;
 pub mod multiline_string;
 pub mod newline;
 
-/// The result of a single parsing step.
-///
-/// An [`Ok`] holds a completed token,
-/// while an [`Err`] holds the state needed to resume parsing once more input is available.
-pub type LexerResult = Result<LexerOutput, LexerState>;
-
-impl From<LexerOutput> for LexerResult {
-    fn from(output: LexerOutput) -> Self {
-        Ok(output)
-    }
-}
-
-impl From<LexerState> for LexerResult {
-    fn from(lexer: LexerState) -> Self {
-        Err(lexer)
-    }
-}
+// re-export token for convenience
+pub use boba_token::Token;
 
 /// Non lexical tokens produced by the lexer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -59,6 +41,24 @@ pub enum LexerOutput {
     Token(Token),
     /// A supporting trivia token.
     Trivia(Trivia),
+}
+
+/// The result of a single parsing step.
+///
+/// An [`Ok`] holds a completed token,
+/// while an [`Err`] holds the state needed to resume parsing once more input is available.
+pub type LexerResult = Result<LexerOutput, LexerState>;
+
+impl From<LexerOutput> for LexerResult {
+    fn from(output: LexerOutput) -> Self {
+        Ok(output)
+    }
+}
+
+impl From<LexerState> for LexerResult {
+    fn from(lexer: LexerState) -> Self {
+        Err(lexer)
+    }
 }
 
 /// A parsing step that is paused partway through a multi character token.
