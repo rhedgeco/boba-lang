@@ -12,10 +12,10 @@ pub enum Token {
     CloseExpr,
 
     // identifiers and literals
-    FloatLiteral,
-    IntegerLiteral,
-    InlineStrLiteral,
-    MultiLineStrLiteral,
+    Float,
+    Integer,
+    InlineString,
+    MultilineString,
     Identifier,
     Constant,
     Variable,

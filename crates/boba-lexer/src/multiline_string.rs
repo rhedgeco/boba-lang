@@ -1,78 +1,69 @@
+//! Parsing for multiline strings introduced with `\\`.
+
+use std::iter::Peekable;
+
 use boba_token::Token;
 
-use crate::{LexerBuilder, LexerOutput, LexerResult};
+use crate::{LexerOutput, LexerResult, LexerState};
 
-/// Builds a multiline string token out of characters.
-#[derive(Debug, Default, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct MultilineStrLexer;
+/// Finishes the multiline string as a multiline string token.
+pub fn finish() -> LexerOutput {
+    Token::MultilineString.into()
+}
 
-impl LexerBuilder for MultilineStrLexer {
-    type NextState = Self;
+/// Consumes the multiline string body until the end of the line.
+///
+/// A newline ends the string.
+/// Any other character is part of the string body.
+pub fn parse_next(input: &mut Peekable<impl Iterator<Item = char>>) -> LexerResult {
+    while let Some(next_char) = input.peek() {
+        return match next_char {
+            // a newline means the string parsing is over, finish the string now
+            '\r' | '\n' => finish().into(),
 
-    fn finish(self) -> Option<LexerOutput> {
-        Some(Token::MultiLineStrLiteral.into())
+            // any other character is valid for the string
+            _ => {
+                let _ = input.next();
+                continue;
+            }
+        };
     }
 
-    fn build(self, c: char) -> LexerResult<Self::NextState> {
-        match c {
-            // if we get a newline character, then the string is complete
-            '\r' | '\n' => LexerResult::Bail(Token::MultiLineStrLiteral.into()),
-            // otherwise literally any other character is acceptable
-            _ => LexerResult::Next(self),
-        }
-    }
+    // if we run out of chars, then the string is still pending
+    LexerState::MultilineString.into()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Token, Trivia, test_utils::tokenize};
 
     #[test]
-    fn build_on_body_char_stays_in_multiline_string() {
-        // any non-newline character keeps extending the multiline string
-        let result = MultilineStrLexer.build('x');
-        assert_eq!(result, LexerResult::Next(MultilineStrLexer));
+    fn finish_is_multiline_string() {
+        assert_eq!(finish(), Token::MultilineString.into());
     }
 
     #[test]
-    fn build_on_newline_bails_with_multiline_string() {
-        // a newline bails, completing the string and leaving the newline to lex
-        let result = MultilineStrLexer.build('\n');
-        assert_eq!(result, LexerResult::Bail(Token::MultiLineStrLiteral.into()));
+    fn newline_ends_string() {
+        for newline in ['\n', '\r'] {
+            let mut input = [newline].into_iter().peekable();
+            let result = parse_next(&mut input);
+            assert_eq!(result, Ok(Token::MultilineString.into()));
+            // the newline is left in place for the next token
+            assert_eq!(input.next(), Some(newline));
+        }
     }
 
     #[test]
-    fn tokenizes_multiline_string_at_end() {
-        // a double backslash starts a multiline string that runs to the end
-        let tokens = tokenize(r"\\hello");
-        assert_eq!(tokens, vec![Token::MultiLineStrLiteral.into()]);
+    fn body_is_consumed_until_newline() {
+        let mut input = "hello world\n".chars().peekable();
+        let result = parse_next(&mut input);
+        assert_eq!(result, Ok(Token::MultilineString.into()));
+        assert_eq!(input.next(), Some('\n'));
     }
 
     #[test]
-    fn tokenizes_multiline_string_at_newline() {
-        // a newline ends the multiline string, left for the next token
-        let tokens = tokenize(concat!(r"\\hello", "\n"));
-        assert_eq!(
-            tokens,
-            vec![Token::MultiLineStrLiteral.into(), Trivia::Newline.into()]
-        );
-    }
-
-    #[test]
-    fn tokenizes_multiline_string_at_carriage_return() {
-        // a carriage return also ends the multiline string, left for the next token
-        let tokens = tokenize(concat!(r"\\hello", "\r"));
-        assert_eq!(
-            tokens,
-            vec![Token::MultiLineStrLiteral.into(), Trivia::Newline.into()]
-        );
-    }
-
-    #[test]
-    fn tokenizes_empty_multiline_string() {
-        // a double backslash with no body is still a multiline string token
-        let tokens = tokenize(r"\\");
-        assert_eq!(tokens, vec![Token::MultiLineStrLiteral.into()]);
+    fn empty_input_is_pending() {
+        let mut input = "".chars().peekable();
+        assert_eq!(parse_next(&mut input), Err(LexerState::MultilineString));
     }
 }

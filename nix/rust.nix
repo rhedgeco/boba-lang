@@ -3,6 +3,7 @@
   overlays = [ inputs.rust-overlay.overlays.default ];
 
   packages = with pkgs; [
+    cargo-show-asm # analyzes rust assembly output
     cargo-nextest # fancier testing harness
   ];
 

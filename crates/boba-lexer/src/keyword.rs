@@ -1,149 +1,181 @@
-use std::marker::PhantomData;
+//! Parsing for keywords, which share their character class with identifiers.
+//!
+//! A keyword is matched character by character against its expected text.
+//! A character that diverges before the keyword completes falls back to an identifier.
+//! A completed keyword is still an identifier if a valid body character follows it.
+
+pub mod utils;
+
+use std::iter::Peekable;
+use std::num::NonZeroUsize;
 
 use boba_token::Token;
 
 use crate::{
-    LexerBuilder, LexerOutput, LexerResult,
-    ident::{is_valid_ident_body, is_valid_ident_start},
+    LexerOutput, LexerResult, LexerState, identifier,
+    keyword::utils::{KeywordStr, parse_next_keyword},
 };
 
-pub struct KeywordStr<'a> {
-    value: &'a str,
-}
+/// The `pub` keyword.
+pub const PUBLIC: KeywordStr<'static> = KeywordStr::build("pub").unwrap();
+/// The `var` keyword.
+pub const VARIABLE: KeywordStr<'static> = KeywordStr::build("var").unwrap();
+/// The `const` keyword.
+pub const CONSTANT: KeywordStr<'static> = KeywordStr::build("const").unwrap();
 
-impl<'a> KeywordStr<'a> {
-    pub const fn value(&self) -> &'a str {
-        self.value
+/// Finishes a pending `pub` keyword.
+///
+/// A full match finishes as a public token.
+/// A partial match finishes as an identifier instead.
+pub fn finish_public(length: NonZeroUsize) -> LexerOutput {
+    if length != PUBLIC.len() {
+        return identifier::finish();
     }
 
-    pub const fn len(&self) -> usize {
-        self.value.as_bytes().len()
+    Token::Public.into()
+}
+
+/// Finishes a pending `var` keyword.
+///
+/// A full match finishes as a variable token.
+/// A partial match finishes as an identifier instead.
+pub fn finish_variable(length: NonZeroUsize) -> LexerOutput {
+    if length != VARIABLE.len() {
+        return identifier::finish();
     }
 
-    pub const fn get(&self, index: usize) -> Option<char> {
-        let bytes = self.value.as_bytes();
-        if index >= bytes.len() {
-            return None;
-        }
+    Token::Variable.into()
+}
 
-        Some(bytes[index] as char)
+/// Finishes a pending `const` keyword.
+///
+/// A full match finishes as a constant token.
+/// A partial match finishes as an identifier instead.
+pub fn finish_constant(length: NonZeroUsize) -> LexerOutput {
+    if length != CONSTANT.len() {
+        return identifier::finish();
     }
 
-    pub const fn build(keyword: &'a str) -> Option<Self> {
-        // convert the keyword into bytes
-        // all keywords should be valid ascii <255
-        let bytes = keyword.as_bytes();
-
-        // ensure the bytes are not empty
-        if bytes.is_empty() {
-            return None;
-        }
-
-        // check the first byte to ensure it is a valid ident start char
-        let first_char = bytes[0] as char;
-        if !is_valid_ident_start(first_char) {
-            return None;
-        }
-
-        // check each consecutive byte to see if it is a valid body char
-        let mut index = 1;
-        while index < bytes.len() {
-            let next_char = bytes[index] as char;
-            if !is_valid_ident_body(next_char) {
-                return None;
-            }
-            index += 1;
-        }
-
-        // if all pass, then we have a valid keyword
-        Some(Self { value: keyword })
-    }
+    Token::Constant.into()
 }
 
-pub trait Keyword {
-    const KEY: KeywordStr<'static>;
-    const TOKEN: Token;
+/// Continues trying to match a `pub` keyword from the given matched length.
+pub fn parse_next_public(
+    length: NonZeroUsize,
+    input: &mut Peekable<impl Iterator<Item = char>>,
+) -> LexerResult {
+    parse_next_keyword(
+        &PUBLIC,
+        length,
+        LexerState::KeywordPublic,
+        finish_public,
+        input,
+    )
 }
 
-/// An auto implemented trait for keywords that provides helpful const info
-pub trait KeywordInfo: Keyword {
-    const PRIMER: char;
-    const LENGTH: usize;
-}
-impl<K: Keyword> KeywordInfo for K {
-    const PRIMER: char = K::KEY.get(0).unwrap();
-    const LENGTH: usize = K::KEY.len();
-}
-
-#[macro_export]
-macro_rules! keyword {
-    ($token:ident => $key:literal) => {
-        $crate::keyword!($token: $token => $key);
-    };
-    ($name:ident: $token:ident => $key:literal) => {
-        #[derive(Debug, Default, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-        pub struct $name;
-        impl $crate::keyword::Keyword for $name {
-            const KEY: $crate::keyword::KeywordStr<'static> = $crate::keyword::KeywordStr::<'static>::build($key).unwrap();
-            const TOKEN: $crate::Token = $crate::Token::$token;
-        }
-    };
+/// Continues trying to match a `var` keyword from the given matched length.
+pub fn parse_next_variable(
+    length: NonZeroUsize,
+    input: &mut Peekable<impl Iterator<Item = char>>,
+) -> LexerResult {
+    parse_next_keyword(
+        &VARIABLE,
+        length,
+        LexerState::KeywordVariable,
+        finish_variable,
+        input,
+    )
 }
 
-keyword!(Public => "pub");
-keyword!(Variable => "var");
-keyword!(Constant => "const");
-
-#[derive(Debug, Default, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct KeywordLexer<K> {
-    _keyword: PhantomData<K>,
-    length: usize,
+/// Continues trying to match a `const` keyword from the given matched length.
+pub fn parse_next_constant(
+    length: NonZeroUsize,
+    input: &mut Peekable<impl Iterator<Item = char>>,
+) -> LexerResult {
+    parse_next_keyword(
+        &CONSTANT,
+        length,
+        LexerState::KeywordConstant,
+        finish_constant,
+        input,
+    )
 }
 
-impl<K: Keyword> KeywordLexer<K> {
-    pub const fn primed() -> Self {
-        Self {
-            _keyword: PhantomData,
-            length: 1,
-        }
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn finish_full_match_is_keyword_token() {
+        assert_eq!(finish_public(PUBLIC.len()), Token::Public.into());
+        assert_eq!(finish_variable(VARIABLE.len()), Token::Variable.into());
+        assert_eq!(finish_constant(CONSTANT.len()), Token::Constant.into());
     }
 
-    fn build_token(&self) -> Token {
-        if self.length == K::LENGTH {
-            return K::TOKEN;
-        }
-
-        Token::Identifier
+    #[test]
+    fn finish_partial_match_is_identifier() {
+        // a length short of the full keyword means it was only a prefix
+        assert_eq!(
+            finish_public(NonZeroUsize::new(1).unwrap()),
+            Token::Identifier.into()
+        );
+        assert_eq!(
+            finish_variable(NonZeroUsize::new(2).unwrap()),
+            Token::Identifier.into()
+        );
+        assert_eq!(
+            finish_constant(NonZeroUsize::new(3).unwrap()),
+            Token::Identifier.into()
+        );
     }
-}
 
-impl<K: Keyword> LexerBuilder for KeywordLexer<K> {
-    type NextState = Self;
-
-    fn finish(self) -> Option<LexerOutput> {
-        Some(self.build_token().into())
+    #[test]
+    fn parse_next_full_keyword_is_pending_at_eof() {
+        // dispatch starts at length 1 with the first letter already consumed
+        // the rest of the keyword matches but the input ends, so it is pending
+        let mut input = "ub".chars().peekable();
+        let result = parse_next_public(NonZeroUsize::MIN, &mut input);
+        assert_eq!(
+            result,
+            Err(LexerState::KeywordPublic(NonZeroUsize::new(3).unwrap()))
+        );
     }
 
-    fn build(mut self, c: char) -> LexerResult<Self::NextState> {
-        // check if we should bail immediately
-        if !is_valid_ident_body(c) {
-            return LexerResult::Bail(self.build_token().into());
-        }
+    #[test]
+    fn parse_next_completed_keyword_then_boundary() {
+        // "pub " matches the whole keyword, then the space is a boundary
+        // a boundary after a complete keyword finishes it as the keyword token
+        let mut input = "ub ".chars().peekable();
+        let result = parse_next_public(NonZeroUsize::MIN, &mut input);
+        assert_eq!(result, Ok(Token::Public.into()));
+        // the boundary character is left in place for the next token
+        assert_eq!(input.next(), Some(' '));
+    }
 
-        // if the length is already too long, just return next
-        if self.length > K::LENGTH {
-            return LexerResult::Next(self);
-        }
+    #[test]
+    fn parse_next_divergence_becomes_identifier() {
+        // "pur..." diverges from "pub" at the third character
+        let mut input = "ur ".chars().peekable();
+        let result = parse_next_public(NonZeroUsize::MIN, &mut input);
+        assert_eq!(result, Ok(Token::Identifier.into()));
+        // the diverging run is consumed as an identifier up to the space
+        assert_eq!(input.next(), Some(' '));
+    }
 
-        // otherwise update the keyword checker
-        match K::KEY.get(self.length) {
-            // if the character is valid, update the length
-            Some(key) if c == key => self.length += 1,
-            // if the character is not valid, overshoot the length
-            // this means the next check wont even get here
-            _ => self.length = K::LENGTH + 1,
-        }
+    #[test]
+    fn parse_next_longer_than_keyword_is_identifier() {
+        // "public" starts like the keyword but continues, making it an identifier
+        let mut input = "ublic ".chars().peekable();
+        let result = parse_next_public(NonZeroUsize::MIN, &mut input);
+        assert_eq!(result, Ok(Token::Identifier.into()));
+    }
 
-        LexerResult::Next(self)
+    #[test]
+    fn parse_next_empty_input_is_pending() {
+        let mut input = "".chars().peekable();
+        assert_eq!(
+            parse_next_variable(NonZeroUsize::MIN, &mut input),
+            Err(LexerState::KeywordVariable(NonZeroUsize::MIN))
+        );
     }
 }

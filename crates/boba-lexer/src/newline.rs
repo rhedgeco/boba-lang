@@ -1,89 +1,61 @@
-use crate::{LexerBuilder, LexerOutput, LexerResult, Trivia};
+//! Parsing for newlines, including the `\r\n` sequence.
 
-/// Builds a newline trivia token out of characters.
-#[derive(Debug, Default, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct NewlineLexer;
+use std::iter::Peekable;
 
-impl NewlineLexer {
-    /// The character that starts this lexer.
-    pub const PRIMER: char = '\r';
+use crate::{LexerOutput, LexerResult, LexerState, Trivia};
+
+/// Finishes the newline as a newline trivia token.
+pub fn finish() -> LexerOutput {
+    Trivia::Newline.into()
 }
 
-impl LexerBuilder for NewlineLexer {
-    type NextState = Self;
+/// Parses the character after an initial `\r`.
+///
+/// A following line feed is consumed so that `\r\n` is treated as a single newline.
+/// Any other character finishes the newline as is.
+pub fn parse_next(input: &mut Peekable<impl Iterator<Item = char>>) -> LexerResult {
+    let next_char = *input.peek().ok_or(LexerState::Newline)?;
 
-    fn finish(self) -> Option<LexerOutput> {
-        Some(Trivia::Newline.into())
+    // if the character is a line feed, consume it
+    // this covers the \r\n single token newline scenario
+    if next_char == '\n' {
+        let _ = input.next();
     }
 
-    fn build(self, c: char) -> LexerResult<Self::NextState> {
-        match c {
-            // capture the CRLF when a '\n' comes after the '\r'
-            '\n' => LexerResult::Consume(Trivia::Newline.into()),
-            // otherwise any other character should bail
-            _ => LexerResult::Bail(Trivia::Newline.into()),
-        }
-    }
+    // otherwise just finish the newline as is
+    finish().into()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Token, Trivia, test_utils::tokenize};
 
     #[test]
-    fn build_on_line_feed_consumes_as_crlf() {
-        // a line feed after the carriage return is consumed into one newline
-        let result = NewlineLexer.build('\n');
-        assert_eq!(result, LexerResult::Consume(Trivia::Newline.into()));
+    fn finish_is_newline_trivia() {
+        assert_eq!(finish(), Trivia::Newline.into());
     }
 
     #[test]
-    fn build_on_other_bails_with_newline() {
-        // any other character bails, leaving the carriage return as a newline
-        let result = NewlineLexer.build('x');
-        assert_eq!(result, LexerResult::Bail(Trivia::Newline.into()));
+    fn carriage_return_line_feed_is_single_newline() {
+        let mut input = "\nrest".chars().peekable();
+        let result = parse_next(&mut input);
+        assert_eq!(result, Ok(Trivia::Newline.into()));
+        // the line feed was consumed as part of the single newline
+        assert_eq!(input.next(), Some('r'));
     }
 
     #[test]
-    fn tokenizes_newline_from_line_feed() {
-        // a bare line feed is a single newline trivia
-        let tokens = tokenize("\n");
-        assert_eq!(tokens, vec![Trivia::Newline.into()]);
+    fn lone_carriage_return_finishes_as_newline() {
+        let mut input = "x".chars().peekable();
+        let result = parse_next(&mut input);
+        assert_eq!(result, Ok(Trivia::Newline.into()));
+        // a non line feed character is left in place
+        assert_eq!(input.next(), Some('x'));
     }
 
     #[test]
-    fn tokenizes_newline_from_carriage_return() {
-        // a carriage return followed by a line feed is one newline trivia
-        let tokens = tokenize("\r\n");
-        assert_eq!(tokens, vec![Trivia::Newline.into()]);
-    }
-
-    #[test]
-    fn tokenizes_lone_carriage_return_as_newline() {
-        // a carriage return alone still resolves to a newline trivia
-        // the following character is bailed so it can be lexed next
-        let tokens = tokenize("\rfoo");
-        assert_eq!(
-            tokens,
-            vec![Trivia::Newline.into(), Token::Identifier.into()]
-        );
-    }
-
-    #[test]
-    fn carriage_return_before_symbol_bails_to_next_token() {
-        // a non-newline after the carriage return bails, leaving it to lex
-        let tokens = tokenize("\r,");
-        assert_eq!(
-            tokens,
-            vec![Trivia::Newline.into(), Token::Delimiter.into()]
-        );
-    }
-
-    #[test]
-    fn consecutive_carriage_returns_are_separate_newlines() {
-        // each carriage return without a following line feed is its own newline
-        let tokens = tokenize("\r\r");
-        assert_eq!(tokens, vec![Trivia::Newline.into(), Trivia::Newline.into()]);
+    fn empty_input_is_pending() {
+        let mut input = "".chars().peekable();
+        assert_eq!(parse_next(&mut input), Err(LexerState::Newline));
     }
 }

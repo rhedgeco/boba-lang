@@ -1,33 +1,39 @@
-use std::{iter::Peekable, mem::take, ops::Range, str::Chars};
+//! A character driven lexer for the boba language.
 
-// re-export token at crate root
+use std::iter::Peekable;
+use std::num::NonZeroUsize;
+
+// re-export token for convenience
 pub use boba_token::Token;
 
 use derive_more::From;
 
-use crate::{
-    backslash::BackSlashLexer,
-    comment::CommentLexer,
-    ident::IdentLexer,
-    inline_string::InlineStringLexer,
-    keyword::{Constant, KeywordInfo, KeywordLexer, Public, Variable},
-    multiline_string::MultilineStrLexer,
-    newline::NewlineLexer,
-    slash::SlashLexer,
-};
-
-pub mod backslash;
+pub mod back_slash;
 pub mod comment;
-pub mod ident;
+pub mod forward_slash;
+pub mod identifier;
 pub mod inline_string;
 pub mod keyword;
 pub mod multiline_string;
 pub mod newline;
-pub mod slash;
 
-/// Shared test helpers for the lexer and its sub-lexers.
-#[cfg(test)]
-pub(crate) mod test_utils;
+/// The result of a single parsing step.
+///
+/// An [`Ok`] holds a completed token,
+/// while an [`Err`] holds the state needed to resume parsing once more input is available.
+pub type LexerResult = Result<LexerOutput, LexerState>;
+
+impl From<LexerOutput> for LexerResult {
+    fn from(output: LexerOutput) -> Self {
+        Ok(output)
+    }
+}
+
+impl From<LexerState> for LexerResult {
+    fn from(lexer: LexerState) -> Self {
+        Err(lexer)
+    }
+}
 
 /// Non lexical tokens produced by the lexer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -55,413 +61,341 @@ pub enum LexerOutput {
     Trivia(Trivia),
 }
 
-/// The outcome of feeding one character to a lexer builder.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum LexerResult<T> {
-    /// A token was produced, and the character was consumed.
-    Consume(LexerOutput),
-    /// A token was produced, and the character was ignored.
-    Bail(LexerOutput),
-    /// A token is still pending.
-    Next(T),
-}
-
-impl<L> LexerResult<L> {
-    /// Maps the pending lexer into another using its [`Into`] conversion.
-    pub fn map_into<L2>(self) -> LexerResult<L2>
-    where
-        L: Into<L2>,
-    {
-        self.map(Into::into)
-    }
-
-    /// Maps the pending lexer with `f`, leaving any produced token untouched.
-    pub fn map<L2>(self, f: impl FnOnce(L) -> L2) -> LexerResult<L2> {
-        match self {
-            LexerResult::Next(lexer) => LexerResult::Next(f(lexer)),
-            LexerResult::Consume(out) => LexerResult::Consume(out),
-            LexerResult::Bail(out) => LexerResult::Bail(out),
-        }
-    }
-}
-
-/// A state machine that builds a single token out of characters.
-pub trait LexerBuilder {
-    /// The state to transition into after consuming a character.
-    type NextState: LexerBuilder;
-    /// Immediately resolves any token still pending.
-    fn finish(self) -> Option<LexerOutput>;
-    /// Injects a character, and attempts to build a token.
-    fn build(self, c: char) -> LexerResult<Self::NextState>;
-}
-
-/// The active sub-lexer, or empty when between tokens.
-#[derive(Default, Debug, From, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-enum LexerState {
-    #[default]
-    Empty,
-    Ident(IdentLexer),
-    Public(KeywordLexer<Public>),
-    Variable(KeywordLexer<Variable>),
-    Constant(KeywordLexer<Constant>),
-    Newline(NewlineLexer),
-    InlineStr(InlineStringLexer),
-    Slash(SlashLexer),
-    Comment(CommentLexer),
-    BackSlash(BackSlashLexer),
-    MultilineStr(MultilineStrLexer),
-}
-
-impl LexerBuilder for LexerState {
-    type NextState = Self;
-
-    fn finish(self) -> Option<LexerOutput> {
-        match self {
-            Self::Empty => None,
-            Self::Ident(lexer) => lexer.finish(),
-            Self::Public(lexer) => lexer.finish(),
-            Self::Variable(lexer) => lexer.finish(),
-            Self::Constant(lexer) => lexer.finish(),
-            Self::Newline(lexer) => lexer.finish(),
-            Self::InlineStr(lexer) => lexer.finish(),
-            Self::Slash(lexer) => lexer.finish(),
-            Self::Comment(lexer) => lexer.finish(),
-            Self::BackSlash(lexer) => lexer.finish(),
-            Self::MultilineStr(lexer) => lexer.finish(),
-        }
-    }
-
-    fn build(self, c: char) -> LexerResult<Self::NextState> {
-        // create a macro for consuming simple tokens
-        macro_rules! consume {
-            ($kind:ident::$variant:ident) => {
-                LexerResult::Consume($kind::$variant.into())
-            };
-        }
-
-        match self {
-            // try to build any lexer state that is currently active
-            LexerState::Ident(lexer) => lexer.build(c).map_into(),
-            LexerState::Public(lexer) => lexer.build(c).map_into(),
-            LexerState::Variable(lexer) => lexer.build(c).map_into(),
-            LexerState::Constant(lexer) => lexer.build(c).map_into(),
-            LexerState::Newline(lexer) => lexer.build(c).map_into(),
-            LexerState::InlineStr(lexer) => lexer.build(c).map_into(),
-            LexerState::Slash(lexer) => lexer.build(c).map_into(),
-            LexerState::Comment(lexer) => lexer.build(c).map_into(),
-            LexerState::BackSlash(lexer) => lexer.build(c).map_into(),
-            LexerState::MultilineStr(lexer) => lexer.build(c).map_into(),
-
-            // otherwise match the character and progress the lexer
-            LexerState::Empty => match c {
-                // some simple characters can be processed immediately
-                ' ' => consume!(Trivia::Space),
-                '.' => consume!(Token::AccessMember),
-                ',' => consume!(Token::Delimiter),
-                '=' => consume!(Token::Assign),
-                '+' => consume!(Token::Add),
-                '-' => consume!(Token::Subtract),
-                '*' => consume!(Token::Multiply),
-                '%' => consume!(Token::Modulo),
-                ':' => consume!(Token::AccessScope),
-                ';' => consume!(Token::CloseExpr),
-                '(' => consume!(Token::OpenGroup),
-                ')' => consume!(Token::CloseGroup),
-                '{' => consume!(Token::OpenScope),
-                '}' => consume!(Token::CloseScope),
-                '\t' => consume!(Trivia::Tab),
-                '\n' => consume!(Trivia::Newline),
-
-                // other lexers come with PRIMER helpers to match the char that triggers it
-                NewlineLexer::PRIMER => LexerResult::Next(NewlineLexer.into()),
-                InlineStringLexer::PRIMER => LexerResult::Next(InlineStringLexer::new().into()),
-                SlashLexer::PRIMER => LexerResult::Next(SlashLexer.into()),
-                BackSlashLexer::PRIMER => LexerResult::Next(BackSlashLexer.into()),
-                Public::PRIMER => LexerResult::Next(KeywordLexer::<Public>::primed().into()),
-                Variable::PRIMER => LexerResult::Next(KeywordLexer::<Variable>::primed().into()),
-                Constant::PRIMER => LexerResult::Next(KeywordLexer::<Constant>::primed().into()),
-
-                // and some lexers have to be primed with a function
-                c if IdentLexer::primer(c) => LexerResult::Next(IdentLexer.into()),
-
-                // always fallback and produce invalid trivia
-                _ => LexerResult::Consume(Trivia::Invalid.into()),
-            },
-        }
-    }
-}
-
-/// Turns source text into a stream of [`LexerOutput`]s.
+/// A parsing step that is paused partway through a multi character token.
 ///
-/// Tracks the byte span of the most recently produced token.
-pub struct Lexer<'a> {
-    state: LexerState,
-    chars: Peekable<Chars<'a>>,
-    source: &'a str,
-    start: usize,
-    end: usize,
+/// Each variant records where lexing left off,
+/// so that the next character can be handled correctly when parsing resumes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum LexerState {
+    /// Parsing a back slash that may begin a multiline string.
+    BackSlash,
+    /// Consuming the body of a line comment.
+    Comment,
+    /// Parsing a forward slash that may begin a comment.
+    ForwardSlash,
+    /// Consuming the body of an identifier.
+    Identifier,
+    /// Parsing the character after an escape inside an inline string.
+    InlineEscape,
+    /// Consuming the body of an inline string.
+    InlineString,
+    /// Matching a possible `const` keyword, holding the matched length.
+    KeywordConstant(NonZeroUsize),
+    /// Matching a possible `pub` keyword, holding the matched length.
+    KeywordPublic(NonZeroUsize),
+    /// Matching a possible `var` keyword, holding the matched length.
+    KeywordVariable(NonZeroUsize),
+    /// Consuming the body of a multiline string.
+    MultilineString,
+    /// Parsing a `\r` newline that may be followed by a `\n`.
+    Newline,
 }
 
-impl<'a> Lexer<'a> {
-    /// Creates a new lexer over the given source text.
-    pub fn new(source: &'a str) -> Self {
-        Self {
-            state: LexerState::Empty,
-            chars: source.chars().peekable(),
-            source,
-            start: 0,
-            end: 0,
+impl LexerState {
+    /// Resumes parsing from this state and always produces a token.
+    ///
+    /// If the input runs out before the token completes,
+    /// the resumable state is finished in place with [`LexerState::finish`].
+    pub fn parse(self, input: &mut Peekable<impl Iterator<Item = char>>) -> LexerOutput {
+        match self.try_parse(input) {
+            Err(state) => state.finish(),
+            Ok(output) => output,
         }
     }
 
-    /// The byte offset where the current token starts.
-    pub fn start(&self) -> usize {
-        self.start
-    }
-
-    /// The byte offset where the current token ends.
-    pub fn end(&self) -> usize {
-        self.end
-    }
-
-    /// The byte range of source covered by the current token.
-    pub fn range(&self) -> Range<usize> {
-        self.start()..self.end()
-    }
-
-    /// The full source text the lexer is reading from.
-    pub fn source(&self) -> &'a str {
-        self.source
-    }
-
-    /// The slice of source text covered by the current token.
-    pub fn token_source(&self) -> &'a str {
-        &self.source()[self.range()]
-    }
-
-    /// Continues lexing into a new source buffer, keeping the current state.
+    /// Completes this state at the end of input without consuming more.
     ///
-    /// Any token mid-parse across the boundary is still completed.
-    pub fn extend<'b>(self, source: &'b str) -> Lexer<'b> {
-        Lexer {
-            state: self.state,
-            ..Lexer::new(source)
+    /// This is used to finish a token when the input has been exhausted while parsing was still in progress.
+    pub fn finish(self) -> LexerOutput {
+        match self {
+            Self::BackSlash => back_slash::finish(),
+            Self::Comment => comment::finish(),
+            Self::ForwardSlash => forward_slash::finish(),
+            Self::Identifier => identifier::finish(),
+            Self::InlineEscape => inline_string::finish_unclosed(),
+            Self::InlineString => inline_string::finish_unclosed(),
+            Self::KeywordConstant(length) => keyword::finish_constant(length),
+            Self::KeywordPublic(length) => keyword::finish_public(length),
+            Self::KeywordVariable(length) => keyword::finish_variable(length),
+            Self::MultilineString => multiline_string::finish(),
+            Self::Newline => newline::finish(),
         }
     }
 
-    /// Consumes the lexer and resolves any token still pending.
+    /// Resumes parsing from this state for a single step.
     ///
-    /// Does not parse any more characters from the source text.
-    pub fn finish(self) -> Option<LexerOutput> {
-        self.state.finish()
+    /// Returns [`Ok`] with a completed token,
+    /// or [`Err`] with resumable state if the token is still pending.
+    pub fn try_parse(self, input: &mut Peekable<impl Iterator<Item = char>>) -> LexerResult {
+        match self {
+            Self::BackSlash => back_slash::parse_next(input),
+            Self::Comment => comment::parse_next(input),
+            Self::ForwardSlash => forward_slash::parse_next(input),
+            Self::Identifier => identifier::parse_next(input),
+            Self::InlineEscape => inline_string::parse_next_escape(input),
+            Self::InlineString => inline_string::parse_next(input),
+            Self::KeywordConstant(length) => keyword::parse_next_constant(length, input),
+            Self::KeywordPublic(length) => keyword::parse_next_public(length, input),
+            Self::KeywordVariable(length) => keyword::parse_next_variable(length, input),
+            Self::MultilineString => multiline_string::parse_next(input),
+            Self::Newline => newline::parse_next(input),
+        }
     }
 }
 
-impl<'a> Iterator for Lexer<'a> {
-    type Item = LexerOutput;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        loop {
-            // get the next char in the chain
-            let next_char = *self.chars.peek()?;
-
-            // if the lexer is in an empty state
-            // we should reset the token start index
-            if matches!(self.state, LexerState::Empty) {
-                self.start = self.end;
-            }
-
-            // then try to build the next output token
-            let state = take(&mut self.state);
-            return Some(match state.build(next_char) {
-                // if the lexer state bailed
-                // just return the output as is
-                LexerResult::Bail(output) => output,
-
-                // if the lexer state consumed the token
-                LexerResult::Consume(output) => {
-                    let _ = self.chars.next(); // consume the character
-                    self.end += 1; // advance the token end index
-                    output // and return the output
-                }
-
-                // if the lexer state is incomplete
-                LexerResult::Next(state) => {
-                    let _ = self.chars.next(); // consume the character
-                    self.state = state; // inject the new state
-                    self.end += 1; // advance the token end index
-                    continue; // and continue to the next char
-                }
-            });
-        }
+/// Parses a single token from the start of the input.
+///
+/// Returns [`None`] if the input is completely exhausted.
+/// Any token that is still pending when the input ends is finished and returned.
+pub fn parse(input: &mut Peekable<impl Iterator<Item = char>>) -> Option<LexerOutput> {
+    match try_parse(input)? {
+        Err(state) => state.finish().into(),
+        Ok(output) => output.into(),
     }
+}
+
+/// Parses a single step from the start of the input.
+///
+/// Returns [`None`] if the input is completely exhausted.
+/// Otherwise it parses characters and either produces a token or resumable state.
+pub fn try_parse(input: &mut Peekable<impl Iterator<Item = char>>) -> Option<LexerResult> {
+    Some(match input.next()? {
+        // --- SINGLE-CHAR TOKENS ---
+        // some simple characters can be processed immediately
+        ' ' => Ok(Trivia::Space.into()),
+        '.' => Ok(Token::AccessMember.into()),
+        ',' => Ok(Token::Delimiter.into()),
+        '=' => Ok(Token::Assign.into()),
+        '+' => Ok(Token::Add.into()),
+        '-' => Ok(Token::Subtract.into()),
+        '*' => Ok(Token::Multiply.into()),
+        '%' => Ok(Token::Modulo.into()),
+        ':' => Ok(Token::AccessScope.into()),
+        ';' => Ok(Token::CloseExpr.into()),
+        '(' => Ok(Token::OpenGroup.into()),
+        ')' => Ok(Token::CloseGroup.into()),
+        '{' => Ok(Token::OpenScope.into()),
+        '}' => Ok(Token::CloseScope.into()),
+        '\t' => Ok(Trivia::Tab.into()),
+        '\n' => Ok(Trivia::Newline.into()),
+
+        // --- MULTI-CHAR TOKENS ---
+        // a back slash could result in a multiline string
+        '\\' => back_slash::parse_next(input),
+        // a forward slash could result in a comment or division symbol
+        '/' => forward_slash::parse_next(input),
+        // a quote opens an inline string literal
+        '"' => inline_string::parse_next(input),
+        // '\r' newlines might be followed by a '\n'. '\r\n' is a single newline
+        '\r' => newline::parse_next(input),
+
+        // --- KEYWORDS / IDENTIFIERS ---
+        // keywords start with a specific letter
+        // the start length is 1 since the initial letter is included
+        'p' => keyword::parse_next_public(NonZeroUsize::MIN, input),
+        'v' => keyword::parse_next_variable(NonZeroUsize::MIN, input),
+        'c' => keyword::parse_next_constant(NonZeroUsize::MIN, input),
+        // any other letter is lastly assumed to be an ident
+        // identifiers have a range of valid start characters
+        c if identifier::is_valid_start(c) => identifier::parse_next(input),
+
+        // --- INVALID CHARACTERS ---
+        // any other character is invalid for the language
+        _ => Ok(Trivia::Invalid.into()),
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_utils::tokenize;
 
-    #[test]
-    fn empty_primes_newline_lexer_on_carriage_return() {
-        // a carriage return from empty primes the newline lexer
-        let result = LexerState::Empty.build(NewlineLexer::PRIMER);
-        assert_eq!(result, LexerResult::Next(NewlineLexer.into()));
+    // parses every token from a string until the input is exhausted
+    fn parse_tokens(text: &str) -> Vec<LexerOutput> {
+        let mut input = text.chars().peekable();
+        let mut tokens = Vec::new();
+        while let Some(token) = parse(&mut input) {
+            tokens.push(token);
+        }
+        tokens
     }
 
     #[test]
-    fn empty_primes_inline_string_lexer_on_quote() {
-        // a quote from empty primes a fresh inline string lexer
-        let result = LexerState::Empty.build(InlineStringLexer::PRIMER);
-        assert_eq!(result, LexerResult::Next(InlineStringLexer::new().into()));
+    fn single_char_tokens_dispatch() {
+        assert_eq!(parse_tokens(" "), vec![Trivia::Space.into()]);
+        assert_eq!(parse_tokens("."), vec![Token::AccessMember.into()]);
+        assert_eq!(parse_tokens(","), vec![Token::Delimiter.into()]);
+        assert_eq!(parse_tokens("="), vec![Token::Assign.into()]);
+        assert_eq!(parse_tokens("+"), vec![Token::Add.into()]);
+        assert_eq!(parse_tokens("-"), vec![Token::Subtract.into()]);
+        assert_eq!(parse_tokens("*"), vec![Token::Multiply.into()]);
+        assert_eq!(parse_tokens("%"), vec![Token::Modulo.into()]);
+        assert_eq!(parse_tokens(":"), vec![Token::AccessScope.into()]);
+        assert_eq!(parse_tokens(";"), vec![Token::CloseExpr.into()]);
+        assert_eq!(parse_tokens("("), vec![Token::OpenGroup.into()]);
+        assert_eq!(parse_tokens(")"), vec![Token::CloseGroup.into()]);
+        assert_eq!(parse_tokens("{"), vec![Token::OpenScope.into()]);
+        assert_eq!(parse_tokens("}"), vec![Token::CloseScope.into()]);
+        assert_eq!(parse_tokens("\t"), vec![Trivia::Tab.into()]);
+        assert_eq!(parse_tokens("\n"), vec![Trivia::Newline.into()]);
     }
 
     #[test]
-    fn empty_primes_slash_lexer_on_slash() {
-        // a slash from empty primes the slash lexer
-        let result = LexerState::Empty.build(SlashLexer::PRIMER);
-        assert_eq!(result, LexerResult::Next(SlashLexer.into()));
+    fn invalid_character_is_trivia() {
+        assert_eq!(parse_tokens("§"), vec![Trivia::Invalid.into()]);
     }
 
     #[test]
-    fn empty_primes_backslash_lexer_on_backslash() {
-        // a backslash from empty primes the backslash lexer
-        let result = LexerState::Empty.build(BackSlashLexer::PRIMER);
-        assert_eq!(result, LexerResult::Next(BackSlashLexer.into()));
+    fn empty_input_yields_none() {
+        assert_eq!(parse_tokens(""), vec![]);
     }
 
     #[test]
-    fn empty_primes_ident_lexer_on_ident_start() {
-        // an identifier start character from empty primes the ident lexer
-        let result = LexerState::Empty.build('a');
-        assert_eq!(result, LexerResult::Next(IdentLexer.into()));
-    }
-
-    #[test]
-    fn empty_consumes_simple_token() {
-        // a single character token is consumed immediately from empty
-        let result = LexerState::Empty.build(',');
-        assert_eq!(result, LexerResult::Consume(Token::Delimiter.into()));
-    }
-
-    #[test]
-    fn empty_consumes_unrecognised_char_as_invalid() {
-        // an unrecognised character is consumed as invalid trivia
-        let result = LexerState::Empty.build('$');
-        assert_eq!(result, LexerResult::Consume(Trivia::Invalid.into()));
-    }
-
-    #[test]
-    fn lexer_tokenizes_single_char_tokens() {
-        // each symbol maps to its own token
-        let tokens = tokenize(".,=:;(){}");
+    fn multi_char_dispatch() {
+        // a lone forward slash is division
+        assert_eq!(parse_tokens("/"), vec![Token::Divide.into()]);
+        // a double forward slash is a comment
+        assert_eq!(parse_tokens("//comment"), vec![Trivia::Comment.into()]);
+        // a double back slash is a multiline string
         assert_eq!(
-            tokens,
+            parse_tokens("\\\\text"),
+            vec![Token::MultilineString.into()]
+        );
+        // a lone back slash is invalid
+        assert_eq!(parse_tokens("\\"), vec![Trivia::Invalid.into()]);
+        // a quote opens an inline string
+        assert_eq!(parse_tokens("\"closed\""), vec![Token::InlineString.into()]);
+        // a carriage return is a newline
+        assert_eq!(parse_tokens("\r"), vec![Trivia::Newline.into()]);
+    }
+
+    #[test]
+    fn keyword_dispatch() {
+        // a complete keyword followed by a boundary is the keyword token
+        assert_eq!(
+            parse_tokens("pub "),
+            vec![Token::Public.into(), Trivia::Space.into()]
+        );
+        assert_eq!(
+            parse_tokens("var "),
+            vec![Token::Variable.into(), Trivia::Space.into()]
+        );
+        assert_eq!(
+            parse_tokens("const "),
+            vec![Token::Constant.into(), Trivia::Space.into()]
+        );
+    }
+
+    #[test]
+    fn keyword_at_eof_is_finished_as_keyword() {
+        // a keyword that ends the input parks as pending, then finishes as the keyword
+        assert_eq!(parse_tokens("pub"), vec![Token::Public.into()]);
+        assert_eq!(parse_tokens("var"), vec![Token::Variable.into()]);
+        assert_eq!(parse_tokens("const"), vec![Token::Constant.into()]);
+    }
+
+    #[test]
+    fn keyword_prefix_is_identifier() {
+        // starts like a keyword but continues, so it is an identifier
+        assert_eq!(
+            parse_tokens("public "),
+            vec![Token::Identifier.into(), Trivia::Space.into()]
+        );
+        // a non keyword letter is a plain identifier
+        assert_eq!(
+            parse_tokens("name "),
+            vec![Token::Identifier.into(), Trivia::Space.into()]
+        );
+    }
+
+    #[test]
+    fn pending_state_is_finished_at_eof() {
+        // a forward slash with no following char finishes as division
+        assert_eq!(parse_tokens("/"), vec![Token::Divide.into()]);
+        // a bare keyword prefix at eof finishes as the keyword
+        assert_eq!(parse_tokens("pub"), vec![Token::Public.into()]);
+    }
+
+    #[test]
+    fn try_parse_returns_resumable_state() {
+        // a quote with no closing quote leaves the string pending
+        let mut input = "\"open".chars().peekable();
+        assert_eq!(try_parse(&mut input), Some(Err(LexerState::InlineString)));
+    }
+
+    #[test]
+    fn whole_string_lexes_into_token_sequence() {
+        // keywords, trivia, and identifiers all advance across their boundaries
+        assert_eq!(
+            parse_tokens("pub var"),
             vec![
+                Token::Public.into(),
+                Trivia::Space.into(),
+                Token::Variable.into(),
+            ]
+        );
+    }
+
+    #[test]
+    fn boundary_char_begins_the_next_token() {
+        // a keyword ends on its boundary, which is then lexed as its own token
+        assert_eq!(
+            parse_tokens("pub.name"),
+            vec![
+                Token::Public.into(),
                 Token::AccessMember.into(),
-                Token::Delimiter.into(),
-                Token::Assign.into(),
-                Token::AccessScope.into(),
-                Token::CloseExpr.into(),
-                Token::OpenGroup.into(),
-                Token::CloseGroup.into(),
-                Token::OpenScope.into(),
-                Token::CloseScope.into(),
+                Token::Identifier.into(),
             ]
         );
     }
 
     #[test]
-    fn lexer_tokenizes_arithmetic_operators() {
-        // each arithmetic symbol maps to its own operator token
-        let tokens = tokenize("+-*%");
+    fn trailing_pending_token_is_finished() {
+        // the final keyword ends the input while pending, then finishes as its token
         assert_eq!(
-            tokens,
+            parse_tokens("name const"),
             vec![
-                Token::Add.into(),
-                Token::Subtract.into(),
-                Token::Multiply.into(),
-                Token::Modulo.into(),
-            ]
-        );
-    }
-
-    #[test]
-    fn lexer_reports_invalid_characters() {
-        // unrecognised characters surface as invalid trivia
-        let tokens = tokenize("$");
-        assert_eq!(tokens, vec![Trivia::Invalid.into()]);
-    }
-
-    #[test]
-    fn lexer_leaves_pending_token_for_flush() {
-        // next stops at the end of source without finishing the pending token
-        // so it can still be extended, and flush resolves it afterwards
-        let mut lexer = Lexer::new("foo");
-        assert_eq!(lexer.by_ref().count(), 0);
-        assert_eq!(lexer.finish(), Some(Token::Identifier.into()));
-    }
-
-    #[test]
-    fn lexer_flush_on_empty_yields_nothing() {
-        // with no token in progress there is nothing to flush
-        let mut lexer = Lexer::new("foo,");
-        let _ = lexer.by_ref().count();
-        assert_eq!(lexer.finish(), None);
-    }
-
-    #[test]
-    fn lexer_extends_token_across_buffers() {
-        // a token split across two buffers resolves once both are lexed
-        // the identifier only completes after the second buffer is consumed
-        let mut lexer = Lexer::new("fo");
-        assert_eq!(lexer.by_ref().count(), 0);
-        let mut lexer = lexer.extend("o");
-        assert_eq!(lexer.by_ref().count(), 0);
-        assert_eq!(lexer.finish(), Some(Token::Identifier.into()));
-    }
-
-    #[test]
-    fn lexer_emits_whitespace_as_trivia() {
-        // each whitespace character surfaces as its own trivia token
-        let tokens = tokenize("  foo \t bar\n");
-        assert_eq!(
-            tokens,
-            vec![
-                Trivia::Space.into(),
-                Trivia::Space.into(),
                 Token::Identifier.into(),
                 Trivia::Space.into(),
-                Trivia::Tab.into(),
-                Trivia::Space.into(),
-                Token::Identifier.into(),
-                Trivia::Newline.into(),
+                Token::Constant.into(),
             ]
         );
     }
 
     #[test]
-    fn lexer_tracks_token_range() {
-        // the range covers the slice of source for the current token
-        let mut lexer = Lexer::new("foo,bar");
-        lexer.next();
-        assert_eq!(lexer.range(), 0..3);
-        assert_eq!(lexer.token_source(), "foo");
+    fn lexer_state_finish_covers_all_variants() {
+        assert_eq!(LexerState::BackSlash.finish(), Trivia::Invalid.into());
+        assert_eq!(LexerState::Comment.finish(), Trivia::Comment.into());
+        assert_eq!(LexerState::ForwardSlash.finish(), Token::Divide.into());
+        assert_eq!(LexerState::Identifier.finish(), Token::Identifier.into());
+        assert_eq!(
+            LexerState::InlineEscape.finish(),
+            Trivia::UnclosedStr.into()
+        );
+        assert_eq!(
+            LexerState::InlineString.finish(),
+            Trivia::UnclosedStr.into()
+        );
+        assert_eq!(
+            LexerState::MultilineString.finish(),
+            Token::MultilineString.into()
+        );
+        assert_eq!(LexerState::Newline.finish(), Trivia::Newline.into());
+        // keywords finish as their token only at the full length
+        assert_eq!(
+            LexerState::KeywordPublic(keyword::PUBLIC.len()).finish(),
+            Token::Public.into()
+        );
+        assert_eq!(
+            LexerState::KeywordPublic(NonZeroUsize::MIN).finish(),
+            Token::Identifier.into()
+        );
     }
 
     #[test]
-    fn lexer_advances_range_per_token() {
-        // the range moves to cover each token, including whitespace trivia
-        let mut lexer = Lexer::new("foo  bar");
-        lexer.next();
-        assert_eq!(lexer.token_source(), "foo");
-        // step past the two spaces separating the identifiers
-        lexer.next();
-        assert_eq!(lexer.range(), 3..4);
-        assert_eq!(lexer.token_source(), " ");
-        lexer.next();
-        lexer.next();
-        assert_eq!(lexer.range(), 5..8);
-        assert_eq!(lexer.token_source(), "bar");
+    fn lexer_state_try_parse_resumes() {
+        // resuming a comment state consumes the body until the newline
+        let mut input = "body\n".chars().peekable();
+        let result = LexerState::Comment.try_parse(&mut input);
+        assert_eq!(result, Ok(Trivia::Comment.into()));
     }
 }
