@@ -6,13 +6,13 @@
 
 pub mod utils;
 
-use std::iter::Peekable;
 use std::num::NonZeroUsize;
 
 use boba_token::Token;
 
 use crate::{
     LexerOutput, LexerResult, LexerState, identifier,
+    iter::PeekableChar,
     keyword::utils::{KeywordStr, parse_next_keyword},
 };
 
@@ -60,10 +60,7 @@ pub fn finish_constant(length: NonZeroUsize) -> LexerOutput {
 }
 
 /// Continues trying to match a `pub` keyword from the given matched length.
-pub fn parse_next_public(
-    length: NonZeroUsize,
-    input: &mut Peekable<impl Iterator<Item = char>>,
-) -> LexerResult {
+pub fn parse_next_public(length: NonZeroUsize, input: impl PeekableChar) -> LexerResult {
     parse_next_keyword(
         &PUBLIC,
         length,
@@ -74,10 +71,7 @@ pub fn parse_next_public(
 }
 
 /// Continues trying to match a `var` keyword from the given matched length.
-pub fn parse_next_variable(
-    length: NonZeroUsize,
-    input: &mut Peekable<impl Iterator<Item = char>>,
-) -> LexerResult {
+pub fn parse_next_variable(length: NonZeroUsize, input: impl PeekableChar) -> LexerResult {
     parse_next_keyword(
         &VARIABLE,
         length,
@@ -88,10 +82,7 @@ pub fn parse_next_variable(
 }
 
 /// Continues trying to match a `const` keyword from the given matched length.
-pub fn parse_next_constant(
-    length: NonZeroUsize,
-    input: &mut Peekable<impl Iterator<Item = char>>,
-) -> LexerResult {
+pub fn parse_next_constant(length: NonZeroUsize, input: impl PeekableChar) -> LexerResult {
     parse_next_keyword(
         &CONSTANT,
         length,

@@ -1,6 +1,5 @@
 //! A character driven lexer for the boba language.
 
-use std::iter::Peekable;
 use std::num::NonZeroUsize;
 
 use derive_more::From;
@@ -10,12 +9,15 @@ pub mod comment;
 pub mod forward_slash;
 pub mod identifier;
 pub mod inline_string;
+pub mod iter;
 pub mod keyword;
 pub mod multiline_string;
 pub mod newline;
 
 // re-export token for convenience
 pub use boba_token::Token;
+
+use crate::iter::PeekableChar;
 
 /// Non lexical tokens produced by the lexer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -96,7 +98,7 @@ impl LexerState {
     ///
     /// If the input runs out before the token completes,
     /// the resumable state is finished in place with [`LexerState::finish`].
-    pub fn parse(self, input: &mut Peekable<impl Iterator<Item = char>>) -> LexerOutput {
+    pub fn parse(self, input: impl PeekableChar) -> LexerOutput {
         match self.try_parse(input) {
             Err(state) => state.finish(),
             Ok(output) => output,
@@ -126,7 +128,7 @@ impl LexerState {
     ///
     /// Returns [`Ok`] with a completed token,
     /// or [`Err`] with resumable state if the token is still pending.
-    pub fn try_parse(self, input: &mut Peekable<impl Iterator<Item = char>>) -> LexerResult {
+    pub fn try_parse(self, input: impl PeekableChar) -> LexerResult {
         match self {
             Self::BackSlash => back_slash::parse_next(input),
             Self::Comment => comment::parse_next(input),
@@ -147,7 +149,7 @@ impl LexerState {
 ///
 /// Returns [`None`] if the input is completely exhausted.
 /// Any token that is still pending when the input ends is finished and returned.
-pub fn parse(input: &mut Peekable<impl Iterator<Item = char>>) -> Option<LexerOutput> {
+pub fn parse(input: impl PeekableChar) -> Option<LexerOutput> {
     match try_parse(input)? {
         Err(state) => state.finish().into(),
         Ok(output) => output.into(),
@@ -158,7 +160,7 @@ pub fn parse(input: &mut Peekable<impl Iterator<Item = char>>) -> Option<LexerOu
 ///
 /// Returns [`None`] if the input is completely exhausted.
 /// Otherwise it parses characters and either produces a token or resumable state.
-pub fn try_parse(input: &mut Peekable<impl Iterator<Item = char>>) -> Option<LexerResult> {
+pub fn try_parse(mut input: impl PeekableChar) -> Option<LexerResult> {
     Some(match input.next()? {
         // --- SINGLE-CHAR TOKENS ---
         // some simple characters can be processed immediately

@@ -1,11 +1,11 @@
 //! Helpers for describing keywords as validated identifier strings.
 
-use std::iter::Peekable;
 use std::num::NonZeroUsize;
 
 use crate::{
-    LexerOutput, LexerResult, LexerState, identifier,
-    identifier::{is_valid_body, is_valid_start},
+    LexerOutput, LexerResult, LexerState,
+    identifier::{self, is_valid_body, is_valid_start},
+    iter::PeekableChar,
 };
 
 /// A keyword whose text is validated as a legal identifier.
@@ -100,10 +100,10 @@ pub fn parse_next_keyword(
     mut length: NonZeroUsize,
     pending: impl Fn(NonZeroUsize) -> LexerState,
     finish: impl Fn(NonZeroUsize) -> LexerOutput,
-    input: &mut Peekable<impl Iterator<Item = char>>,
+    mut input: impl PeekableChar,
 ) -> LexerResult {
     loop {
-        return match (input.peek().copied(), keyword.get(length.get())) {
+        return match (input.peek(), keyword.get(length.get())) {
             // the input ran out, so park as pending until more input or a final finish
             // we cannot commit to the keyword here since later chars may extend it
             (None, _) => pending(length).into(),
@@ -168,13 +168,12 @@ mod tests {
     // runs parse_next_keyword against WORD, starting at the given matched length
     // the pending state and completion token are stand ins for a real caller
     fn parse_word(length: NonZeroUsize, rest: &str) -> LexerResult {
-        let mut input = rest.chars().peekable();
         parse_next_keyword(
             &WORD,
             length,
             |_| LexerState::Identifier,
             |_| WORD_TOKEN.into(),
-            &mut input,
+            rest.chars().peekable(),
         )
     }
 

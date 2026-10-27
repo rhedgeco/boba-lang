@@ -1,10 +1,8 @@
 //! Parsing for forward slashes, which may begin a comment.
 
-use std::iter::Peekable;
-
 use boba_token::Token;
 
-use crate::{LexerOutput, LexerResult, LexerState, comment};
+use crate::{LexerOutput, LexerResult, LexerState, comment, iter::PeekableChar};
 
 /// Finishes a lone forward slash as a divide token.
 pub fn finish() -> LexerOutput {
@@ -15,8 +13,8 @@ pub fn finish() -> LexerOutput {
 ///
 /// A following forward slash begins a comment.
 /// Anything else finishes the forward slash as a divide token.
-pub fn parse_next(input: &mut Peekable<impl Iterator<Item = char>>) -> LexerResult {
-    let next_char = *input.peek().ok_or(LexerState::ForwardSlash)?;
+pub fn parse_next(mut input: impl PeekableChar) -> LexerResult {
+    let next_char = input.peek().ok_or(LexerState::ForwardSlash)?;
 
     // if the next character is another forward slash
     // then we should start parsing the comment

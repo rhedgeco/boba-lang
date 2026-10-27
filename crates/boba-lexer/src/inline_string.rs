@@ -1,10 +1,8 @@
 //! Parsing for inline string literals delimited by double quotes.
 
-use std::iter::Peekable;
-
 use boba_token::Token;
 
-use crate::{LexerOutput, LexerResult, LexerState, Trivia};
+use crate::{LexerOutput, LexerResult, LexerState, Trivia, iter::PeekableChar};
 
 /// Finishes a string that was never closed as unclosed string trivia.
 pub fn finish_unclosed() -> LexerOutput {
@@ -20,7 +18,7 @@ pub fn finish() -> LexerOutput {
 ///
 /// A newline cannot be escaped and leaves the string unclosed.
 /// Any other character is accepted and parsing returns to the string body.
-pub fn parse_next_escape(input: &mut Peekable<impl Iterator<Item = char>>) -> LexerResult {
+pub fn parse_next_escape(mut input: impl PeekableChar) -> LexerResult {
     match input.peek().ok_or(LexerState::InlineEscape)? {
         // a newline cannot be escaped, finish the string now
         '\r' | '\n' => finish_unclosed().into(),
@@ -39,7 +37,7 @@ pub fn parse_next_escape(input: &mut Peekable<impl Iterator<Item = char>>) -> Le
 /// A back slash begins an escape.
 /// A newline leaves the string unclosed.
 /// Any other character is part of the string body.
-pub fn parse_next(input: &mut Peekable<impl Iterator<Item = char>>) -> LexerResult {
+pub fn parse_next(mut input: impl PeekableChar) -> LexerResult {
     while let Some(next_char) = input.peek() {
         return match next_char {
             // a newline means the string parsing is over, finish the string now

@@ -1,10 +1,8 @@
 //! Parsing for multiline strings introduced with `\\`.
 
-use std::iter::Peekable;
-
 use boba_token::Token;
 
-use crate::{LexerOutput, LexerResult, LexerState};
+use crate::{LexerOutput, LexerResult, LexerState, iter::PeekableChar};
 
 /// Finishes the multiline string as a multiline string token.
 pub fn finish() -> LexerOutput {
@@ -15,7 +13,7 @@ pub fn finish() -> LexerOutput {
 ///
 /// A newline ends the string.
 /// Any other character is part of the string body.
-pub fn parse_next(input: &mut Peekable<impl Iterator<Item = char>>) -> LexerResult {
+pub fn parse_next(mut input: impl PeekableChar) -> LexerResult {
     while let Some(next_char) = input.peek() {
         return match next_char {
             // a newline means the string parsing is over, finish the string now

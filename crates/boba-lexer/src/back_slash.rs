@@ -1,8 +1,6 @@
 //! Parsing for back slashes, which may begin a multiline string.
 
-use std::iter::Peekable;
-
-use crate::{LexerOutput, LexerResult, LexerState, Trivia, multiline_string};
+use crate::{LexerOutput, LexerResult, LexerState, Trivia, iter::PeekableChar, multiline_string};
 
 /// Finishes a lone back slash as an invalid token.
 pub fn finish() -> LexerOutput {
@@ -13,8 +11,8 @@ pub fn finish() -> LexerOutput {
 ///
 /// A following back slash begins a multiline string.
 /// Anything else finishes the back slash as an invalid token.
-pub fn parse_next(input: &mut Peekable<impl Iterator<Item = char>>) -> LexerResult {
-    let next_char = *input.peek().ok_or(LexerState::BackSlash)?;
+pub fn parse_next(mut input: impl PeekableChar) -> LexerResult {
+    let next_char = input.peek().ok_or(LexerState::BackSlash)?;
 
     // if the next character is another back slash
     // then we should start parsing the multiline string

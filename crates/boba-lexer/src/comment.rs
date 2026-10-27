@@ -1,8 +1,6 @@
 //! Parsing for line comments introduced with `//`.
 
-use std::iter::Peekable;
-
-use crate::{LexerOutput, LexerResult, LexerState, Trivia};
+use crate::{LexerOutput, LexerResult, LexerState, Trivia, iter::PeekableChar};
 
 /// Finishes the comment as a comment trivia token.
 pub fn finish() -> LexerOutput {
@@ -13,7 +11,7 @@ pub fn finish() -> LexerOutput {
 ///
 /// A newline ends the comment.
 /// Any other character is consumed as part of the comment body.
-pub fn parse_next(input: &mut Peekable<impl Iterator<Item = char>>) -> LexerResult {
+pub fn parse_next(mut input: impl PeekableChar) -> LexerResult {
     while let Some(next_char) = input.peek() {
         return match next_char {
             // if the character is a newline, finish the comment
