@@ -1,1 +1,3 @@
-<h1 align="center"><code>boba-lang</code></h1>
+# `boba-lang`
+
+[![Built with devenv](https://devenv.sh/assets/devenv-badge.svg)](https://devenv.sh)
