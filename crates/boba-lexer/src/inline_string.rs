@@ -49,7 +49,7 @@ pub fn parse_next_escape(mut input: impl PeekableChar) -> LexResult {
         return input.consume_then(parse_next);
     }
 
-    // otherwise, return an unlcosed string
+    // otherwise, return an unclosed string
     finish_unclosed().into()
 }
 
