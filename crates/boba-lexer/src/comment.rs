@@ -6,6 +6,7 @@ use crate::{
 };
 
 /// Finishes the comment as a comment trivia token.
+#[must_use]
 pub fn finish() -> LexOutput {
     Trivia::Comment.into()
 }
@@ -14,6 +15,9 @@ pub fn finish() -> LexOutput {
 ///
 /// A newline ends the comment.
 /// Any other character is consumed as part of the comment body.
+///
+/// # Errors
+/// Returns the resumable [`LexState`] if the input is exhausted mid-token.
 pub fn parse_next(mut input: impl PeekableChar) -> LexResult {
     loop {
         // try to peek the next char, returning a pending comment if failed
@@ -22,7 +26,7 @@ pub fn parse_next(mut input: impl PeekableChar) -> LexResult {
             '\r' | '\n' => return finish().into(),
             // otherwise consume and try again
             _ => input.consume(),
-        };
+        }
     }
 }
 

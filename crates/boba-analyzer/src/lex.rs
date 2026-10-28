@@ -12,10 +12,10 @@ pub fn print_tokens(source: &str) {
             LexOutput::Trivia(Trivia::Comment) => println!("{}", &source[lexer.range()]),
             // show invalid tokens
             LexOutput::Trivia(Trivia::Invalid) => {
-                eprintln!("Invalid Token: '{}'", &source[lexer.range()])
+                eprintln!("Invalid Token: '{}'", &source[lexer.range()]);
             }
             LexOutput::Trivia(Trivia::UnclosedStr) => {
-                eprintln!("Unclosed String: {}", &source[lexer.range()])
+                eprintln!("Unclosed String: {}", &source[lexer.range()]);
             }
         }
     }

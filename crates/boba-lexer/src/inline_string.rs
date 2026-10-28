@@ -8,11 +8,13 @@ use crate::{
 };
 
 /// Finishes a string that was never closed as unclosed string trivia.
+#[must_use]
 pub fn finish_unclosed() -> LexOutput {
     Trivia::UnclosedStr.into()
 }
 
 /// Finishes a properly closed string as an inline string token.
+#[must_use]
 pub fn finish() -> LexOutput {
     Token::InlineString.into()
 }
@@ -21,7 +23,9 @@ pub fn finish() -> LexOutput {
 ///
 /// A newline cannot be escaped, so this returns `false`.
 /// Any other character can be escaped, so this returns `true`.
-/// Returns [`Err`] with the pending escape state if the input has no next character.
+///
+/// # Errors
+/// Returns the resumable [`LexState`] if the input has no next character.
 pub fn can_escape(mut input: impl PeekableChar) -> Result<bool, LexState> {
     // try to get the next character, returning the pending escape state if there is none
     Ok(match input.peek_or(LexState::InlineEscape)? {
@@ -36,6 +40,9 @@ pub fn can_escape(mut input: impl PeekableChar) -> Result<bool, LexState> {
 ///
 /// A newline cannot be escaped and leaves the string unclosed.
 /// Any other character is accepted and parsing returns to the string body.
+///
+/// # Errors
+/// Returns the resumable [`LexState`] if the input is exhausted mid-token.
 pub fn parse_next_escape(mut input: impl PeekableChar) -> LexResult {
     // if the next char can be escaped, consume and keep parsing the string
     if can_escape(&mut input)? {
@@ -52,6 +59,9 @@ pub fn parse_next_escape(mut input: impl PeekableChar) -> LexResult {
 /// A back slash begins an escape.
 /// A newline leaves the string unclosed.
 /// Any other character is part of the string body.
+///
+/// # Errors
+/// Returns the resumable [`LexState`] if the input is exhausted mid-token.
 pub fn parse_next(mut input: impl PeekableChar) -> LexResult {
     loop {
         match input.peek_or(LexState::InlineString)? {

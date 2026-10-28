@@ -102,7 +102,11 @@ impl LexState {
     /// Completes this state at the end of input without consuming more.
     ///
     /// This is used to finish a token when the input has been exhausted while parsing was still in progress.
+    #[must_use]
     pub fn finish(self) -> LexOutput {
+        // each variant is listed explicitly for exhaustiveness,
+        // even where two states share a finish behavior
+        #[allow(clippy::match_same_arms)]
         match self {
             Self::BackSlash => back_slash::finish(),
             Self::Comment => comment::finish(),
@@ -118,8 +122,10 @@ impl LexState {
 
     /// Resumes parsing from this state for a single step.
     ///
-    /// Returns [`Ok`] with a completed token,
-    /// or [`Err`] with resumable state if the token is still pending.
+    /// Returns [`Ok`] with a completed token.
+    ///
+    /// # Errors
+    /// Returns the resumable [`LexState`] if the input is exhausted mid-token.
     pub fn try_parse(self, input: impl PeekableChar) -> LexResult {
         match self {
             Self::BackSlash => back_slash::parse_next(input),

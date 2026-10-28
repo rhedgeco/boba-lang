@@ -10,4 +10,13 @@ boba-token = { path = "crates/boba-token" }
 
 # remote crates
 derive_more = "2.1"
-unicode-xid = "0.2"
+unicode-xid = "0.2.6"
+
+[workspace.lints.clippy]
+# opt into the stricter pedantic group across the workspace
+pedantic = { level = "warn", priority = -1 }
+
+# manual clippy lint tuning
+missing_const_for_fn = "warn"
+module_name_repetitions = "allow"
+use_self = "warn"

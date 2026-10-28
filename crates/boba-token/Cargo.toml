@@ -5,3 +5,6 @@ edition = "2024"
 
 [dependencies]
 derive_more = { workspace = true, features = ["display"] }
+
+[lints]
+workspace = true

@@ -7,6 +7,7 @@ use crate::{
 };
 
 /// Finishes a lone back slash as an invalid token.
+#[must_use]
 pub fn finish() -> LexOutput {
     Trivia::Invalid.into()
 }
@@ -15,6 +16,9 @@ pub fn finish() -> LexOutput {
 ///
 /// A following back slash begins a multiline string.
 /// Anything else finishes the back slash as an invalid token.
+///
+/// # Errors
+/// Returns the resumable [`LexState`] if the input is exhausted mid-token.
 pub fn parse_next(mut input: impl PeekableChar) -> LexResult {
     match input.peek_or(LexState::BackSlash)? {
         // if the next character is another back slash

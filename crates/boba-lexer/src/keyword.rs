@@ -22,16 +22,19 @@ pub struct PendingKeyword {
 
 impl PendingKeyword {
     /// Returns the length of the pending keyword characters
+    #[must_use]
     pub const fn len(&self) -> usize {
         self.pending.len()
     }
 
     /// Returns true if there are no pending characters left to match.
+    #[must_use]
     pub const fn is_empty(&self) -> bool {
         self.pending.is_empty()
     }
 
     /// Returns the first pending character in the keyword if it exists.
+    #[must_use]
     pub const fn next_char(&self) -> Option<char> {
         match self.pending.as_bytes() {
             [b, ..] => Some(*b as char),
@@ -43,6 +46,7 @@ impl PendingKeyword {
     ///
     /// Produces the keyword's token if there are no pending characters.
     /// Otherwise, an identifier token is produced.
+    #[must_use]
     pub const fn finish(self) -> LexOutput {
         if self.is_empty() {
             return LexOutput::Token(self.token);
@@ -52,12 +56,16 @@ impl PendingKeyword {
     }
 
     /// Skips the next pending character in the parse sequence.
+    #[must_use]
     pub fn skip_next(mut self) -> Self {
         self.pending = self.pending.get(1..).unwrap_or("");
         self
     }
 
     /// Continues parsing the keyword using the `input` characters.
+    ///
+    /// # Errors
+    /// Returns the resumable [`LexState`] if the input is exhausted mid-token.
     pub fn parse_next(mut self, mut input: impl PeekableChar) -> LexResult
     where
         Self: Into<LexState>,
@@ -87,6 +95,7 @@ impl PendingKeyword {
     /// - Every byte must be a valid ascii character.
     /// - The first byte must be a valid ascii identifier start character.
     /// - Every remaining byte must be a valid ascii identifier body character.
+    #[must_use]
     pub const fn build(keyword: &'static str, token: Token) -> Option<Self> {
         // ensure the keyword is not empty
         let bytes = keyword.as_bytes();

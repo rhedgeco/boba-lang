@@ -8,6 +8,7 @@ use crate::{
 };
 
 /// Finishes a lone forward slash as a divide token.
+#[must_use]
 pub fn finish() -> LexOutput {
     Token::Divide.into()
 }
@@ -16,6 +17,9 @@ pub fn finish() -> LexOutput {
 ///
 /// A following forward slash begins a comment.
 /// Anything else finishes the forward slash as a divide token.
+///
+/// # Errors
+/// Returns the resumable [`LexState`] if the input is exhausted mid-token.
 pub fn parse_next(mut input: impl PeekableChar) -> LexResult {
     match input.peek_or(LexState::ForwardSlash)? {
         // if the next character is another forward slash

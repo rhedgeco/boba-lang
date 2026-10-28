@@ -29,7 +29,7 @@ where
     I: Iterator<Item = char>,
 {
     fn peek(&mut self) -> Option<char> {
-        std::iter::Peekable::peek(self).copied()
+        Self::peek(self).copied()
     }
 }
 
@@ -56,14 +56,16 @@ pub trait PeekableCharExt: PeekableChar {
 
     /// Peeks the next character, returning [`Ok`] if it exists.
     ///
-    /// Returns [`Err`] containing `or` if there was no next character.
+    /// # Errors
+    /// Returns `or` if there was no next character.
     fn peek_or(&mut self, or: LexState) -> Result<char, LexState> {
         self.peek().ok_or(or)
     }
 
     /// Takes the next character, returning [`Ok`] if it exists.
     ///
-    /// Returns [`Err`] containing `or` if there was no next character.
+    /// # Errors
+    /// Returns `or` if there was no next character.
     fn next_or(&mut self, or: LexState) -> Result<char, LexState> {
         let next_char = self.peek_or(or)?;
         let _ = self.next();
@@ -82,7 +84,7 @@ pub struct TriviaIter<I> {
 
 impl<I: Iterator<Item = LexOutput>> TriviaIter<I> {
     /// Creates a trivia iterator over the given lexer output.
-    pub fn from_output_iter(iter: I) -> Self {
+    pub const fn from_output_iter(iter: I) -> Self {
         Self { inner: iter }
     }
 }
@@ -94,7 +96,7 @@ impl<I: Iterator<Item = LexOutput>> Iterator for TriviaIter<I> {
         loop {
             return match self.inner.next()? {
                 LexOutput::Trivia(trivia) => Some(trivia),
-                _ => continue,
+                LexOutput::Token(_) => continue,
             };
         }
     }
@@ -110,7 +112,7 @@ pub struct TokenIter<I> {
 
 impl<I: Iterator<Item = LexOutput>> TokenIter<I> {
     /// Creates a token iterator over the given lexer output.
-    pub fn from_output_iter(iter: I) -> Self {
+    pub const fn from_output_iter(iter: I) -> Self {
         Self { inner: iter }
     }
 }
@@ -122,7 +124,7 @@ impl<I: Iterator<Item = LexOutput>> Iterator for TokenIter<I> {
         loop {
             return match self.inner.next()? {
                 LexOutput::Token(token) => Some(token),
-                _ => continue,
+                LexOutput::Trivia(_) => continue,
             };
         }
     }
@@ -171,12 +173,12 @@ impl<I: Iterator<Item = char>> RangeCounter<I> {
     ///
     /// This should be called after a token is produced so that the next
     /// [`range`](RangeCounter::range) begins where the previous token ended.
-    pub fn reset_range(&mut self) {
+    pub const fn reset_range(&mut self) {
         self.start = self.end;
     }
 
     /// Returns the byte range consumed since the last [`reset_range`](RangeCounter::reset_range).
-    pub fn range(&self) -> Range<usize> {
+    pub const fn range(&self) -> Range<usize> {
         self.start..self.end
     }
 }
@@ -222,6 +224,7 @@ pub struct Lexer<I: Iterator<Item = char>> {
 
 impl<'a> Lexer<Chars<'a>> {
     /// Creates a lexer over the characters of `source`.
+    #[must_use]
     pub fn from_source(source: &'a str) -> Self {
         Self::from_char_iter(source.chars())
     }
@@ -236,7 +239,7 @@ impl<I: Iterator<Item = char>> Lexer<I> {
     }
 
     /// Returns the byte range of the most recently produced output.
-    pub fn range(&self) -> Range<usize> {
+    pub const fn range(&self) -> Range<usize> {
         self.inner.range()
     }
 }
@@ -267,6 +270,7 @@ pub struct ExtendableLexer<I: Iterator<Item = char>> {
 
 impl<'a> ExtendableLexer<Chars<'a>> {
     /// Creates a lexer over the characters of `source`.
+    #[must_use]
     pub fn from_source(source: &'a str) -> Self {
         Self::from_char_iter(source.chars())
     }
@@ -282,7 +286,7 @@ impl<I: Iterator<Item = char>> ExtendableLexer<I> {
     }
 
     /// Returns the byte range of the most recently produced output.
-    pub fn range(&self) -> Range<usize> {
+    pub const fn range(&self) -> Range<usize> {
         self.inner.range()
     }
 
@@ -321,12 +325,11 @@ impl<I: Iterator<Item = char>> Iterator for ExtendableLexer<I> {
 
     fn next(&mut self) -> Option<Self::Item> {
         // try to resume from an old state
-        let result = match self.state.take() {
-            Some(state) => state.try_parse(&mut self.inner),
-            None => {
-                self.inner.reset_range();
-                crate::try_parse(&mut self.inner)?
-            }
+        let result = if let Some(state) = self.state.take() {
+            state.try_parse(&mut self.inner)
+        } else {
+            self.inner.reset_range();
+            crate::try_parse(&mut self.inner)?
         };
 
         // extract the resulting token or state
@@ -384,10 +387,14 @@ mod tests {
 
     #[test]
     fn peekable_char_forwards_through_mut_ref() {
-        // a mutable reference forwards peek to the underlying iterator
-        let mut input = "x".chars().peekable();
-        let mut by_ref = &mut input;
-        assert_eq!(PeekableChar::peek(&mut by_ref), Some('x'));
+        // a mutable reference forwards peek to the underlying iterator;
+        // the double `&mut` is intentional to exercise the `&mut I` impl
+        #[allow(clippy::mut_mut)]
+        {
+            let mut input = "x".chars().peekable();
+            let mut by_ref = &mut input;
+            assert_eq!(PeekableChar::peek(&mut by_ref), Some('x'));
+        }
     }
 
     // a mix of tokens and trivia used to exercise the filtering iterators
@@ -416,14 +423,14 @@ mod tests {
     fn tokens_on_all_trivia_is_empty() {
         let output = vec![Trivia::Space.into(), Trivia::Tab.into()];
         let tokens: Vec<Token> = output.into_iter().tokens().collect();
-        assert!(tokens.is_empty());
+        assert_eq!(tokens, [] as [boba_token::Token; 0]);
     }
 
     #[test]
     fn trivia_on_all_tokens_is_empty() {
         let output = vec![Token::Add.into(), Token::Subtract.into()];
         let trivia: Vec<Trivia> = output.into_iter().trivia().collect();
-        assert!(trivia.is_empty());
+        assert_eq!(trivia, [] as [Trivia; 0]);
     }
 
     #[test]
@@ -572,7 +579,7 @@ mod tests {
     fn extendable_lexer_does_not_finish_a_trailing_token() {
         // unlike Lexer, a token still in progress at the end is not produced
         let output: Vec<LexOutput> = "const".chars().extendable_lexer().collect();
-        assert!(output.is_empty());
+        assert_eq!(output, [] as [LexOutput; 0]);
     }
 
     #[test]

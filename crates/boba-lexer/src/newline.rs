@@ -6,6 +6,7 @@ use crate::{
 };
 
 /// Finishes the newline as a newline trivia token.
+#[must_use]
 pub fn finish() -> LexOutput {
     Trivia::Newline.into()
 }
@@ -14,6 +15,9 @@ pub fn finish() -> LexOutput {
 ///
 /// A following line feed is consumed so that `\r\n` is treated as a single newline.
 /// Any other character finishes the newline as is.
+///
+/// # Errors
+/// Returns the resumable [`LexState`] if the input is exhausted mid-token.
 pub fn parse_next(mut input: impl PeekableChar) -> LexResult {
     // if the character is a line feed, consume it
     // this covers the \r\n single token newline scenario

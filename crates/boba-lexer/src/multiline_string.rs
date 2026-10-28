@@ -8,6 +8,7 @@ use crate::{
 };
 
 /// Finishes the multiline string as a multiline string token.
+#[must_use]
 pub fn finish() -> LexOutput {
     Token::MultilineString.into()
 }
@@ -16,6 +17,9 @@ pub fn finish() -> LexOutput {
 ///
 /// A newline ends the string.
 /// Any other character is part of the string body.
+///
+/// # Errors
+/// Returns the resumable [`LexState`] if the input is exhausted mid-token.
 pub fn parse_next(mut input: impl PeekableChar) -> LexResult {
     loop {
         // try to peek the next char, returning a pending string if failed
@@ -24,7 +28,7 @@ pub fn parse_next(mut input: impl PeekableChar) -> LexResult {
             '\r' | '\n' => return finish().into(),
             // otherwise consume and try again
             _ => input.consume(),
-        };
+        }
     }
 }
 

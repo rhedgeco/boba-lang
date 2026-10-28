@@ -9,26 +9,31 @@ use crate::{
 };
 
 /// Returns true if the character is a valid identifier start.
+#[must_use]
 pub fn valid_start(c: char) -> bool {
     valid_ascii_start(c) || c.is_xid_start()
 }
 
 /// Returns true if the character is a valid identifier body.
+#[must_use]
 pub fn valid_body(c: char) -> bool {
     valid_ascii_body(c) || c.is_xid_continue()
 }
 
 /// Returns true if the character is a valid ascii identifier start.
+#[must_use]
 pub const fn valid_ascii_start(c: char) -> bool {
     matches!(c, '_' | 'a'..='z' | 'A'..='Z')
 }
 
 /// Returns true if the character is a valid ascii identifier body.
+#[must_use]
 pub const fn valid_ascii_body(c: char) -> bool {
     matches!(c, '_' | 'a'..='z' | 'A'..='Z' | '0'..='9')
 }
 
 /// Finishes the identifier as an identifier token.
+#[must_use]
 pub fn finish() -> LexOutput {
     Token::Identifier.into()
 }
@@ -37,6 +42,9 @@ pub fn finish() -> LexOutput {
 ///
 /// Each valid body character is consumed.
 /// The first invalid character ends the identifier and is left in place.
+///
+/// # Errors
+/// Returns the resumable [`LexState`] if the input is exhausted mid-token.
 pub fn parse_next(mut input: impl PeekableChar) -> LexResult {
     loop {
         // if the next character is not valid, finish the identifier
