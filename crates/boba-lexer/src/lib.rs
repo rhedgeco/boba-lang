@@ -186,8 +186,8 @@ pub fn try_parse(mut input: impl PeekableChar) -> Option<LexResult> {
         keyword::PUB_FIRST => keyword::PUB.skip_next().parse_next(input),
         keyword::VAR_FIRST => keyword::VAR.skip_next().parse_next(input),
         keyword::CONST_FIRST => keyword::CONST.skip_next().parse_next(input),
-        // any letter not used in a keyword should be checked for an identifier
-        c if identifier::is_valid_start(c) => identifier::parse_next(input),
+        // any character not used in a keyword should be checked for identifier characters
+        c if identifier::valid_start(c) => identifier::parse_next(input),
 
         // --- INVALID CHARACTERS ---
         // any other character is invalid for the language

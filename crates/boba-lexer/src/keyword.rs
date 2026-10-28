@@ -72,7 +72,7 @@ impl PendingKeyword {
             }
 
             // if the next character is not a valid identifier body, finish the keyword
-            if !identifier::is_valid_body(next_char) {
+            if !identifier::valid_body(next_char) {
                 return self.finish().into();
             }
 
@@ -85,8 +85,8 @@ impl PendingKeyword {
     ///
     /// # Requirements
     /// - Every byte must be a valid ascii character.
-    /// - The first byte must be a valid identifier start character.
-    /// - Every remaining byte must be a valid identifier body character.
+    /// - The first byte must be a valid ascii identifier start character.
+    /// - Every remaining byte must be a valid ascii identifier body character.
     pub const fn build(keyword: &'static str, token: Token) -> Option<Self> {
         // ensure the keyword is not empty
         let bytes = keyword.as_bytes();
@@ -100,8 +100,8 @@ impl PendingKeyword {
             return None;
         }
 
-        // ensure the byte is a valid identifier start character
-        if !identifier::is_valid_start(first_byte as char) {
+        // ensure the byte is a valid ascii identifier start character
+        if !identifier::valid_ascii_start(first_byte as char) {
             return None;
         }
 
@@ -115,7 +115,7 @@ impl PendingKeyword {
             }
 
             // ensure the byte is a valid identifier body character
-            if !identifier::is_valid_body(next_byte as char) {
+            if !identifier::valid_ascii_body(next_byte as char) {
                 return None;
             }
 

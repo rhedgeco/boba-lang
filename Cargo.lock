@@ -66,6 +66,7 @@ version = "0.1.0"
 dependencies = [
  "boba-token",
  "derive_more",
+ "unicode-xid",
 ]
 
 [[package]]

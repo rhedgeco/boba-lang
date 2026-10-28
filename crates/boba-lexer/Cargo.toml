@@ -6,3 +6,4 @@ edition = "2024"
 [dependencies]
 boba-token.workspace = true
 derive_more = { workspace = true, features = ["from"] }
+unicode-xid.workspace = true

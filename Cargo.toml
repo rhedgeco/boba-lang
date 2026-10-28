@@ -10,3 +10,4 @@ boba-token = { path = "crates/boba-token" }
 
 # remote crates
 derive_more = "2.1"
+unicode-xid = "0.2"
