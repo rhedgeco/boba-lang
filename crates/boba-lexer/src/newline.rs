@@ -1,12 +1,12 @@
 //! Parsing for newlines, including the `\r\n` sequence.
 
 use crate::{
-    LexerOutput, LexerResult, LexerState, Trivia,
+    LexOutput, LexResult, LexState, Trivia,
     iter::{PeekableChar, PeekableCharExt},
 };
 
 /// Finishes the newline as a newline trivia token.
-pub fn finish() -> LexerOutput {
+pub fn finish() -> LexOutput {
     Trivia::Newline.into()
 }
 
@@ -14,10 +14,10 @@ pub fn finish() -> LexerOutput {
 ///
 /// A following line feed is consumed so that `\r\n` is treated as a single newline.
 /// Any other character finishes the newline as is.
-pub fn parse_next(mut input: impl PeekableChar) -> LexerResult {
+pub fn parse_next(mut input: impl PeekableChar) -> LexResult {
     // if the character is a line feed, consume it
     // this covers the \r\n single token newline scenario
-    if input.peek_or(LexerState::Newline)? == '\n' {
+    if input.peek_or(LexState::Newline)? == '\n' {
         input.consume();
     }
 
@@ -55,6 +55,6 @@ mod tests {
     #[test]
     fn empty_input_is_pending() {
         let mut input = "".chars().peekable();
-        assert_eq!(parse_next(&mut input), Err(LexerState::Newline));
+        assert_eq!(parse_next(&mut input), Err(LexState::Newline));
     }
 }

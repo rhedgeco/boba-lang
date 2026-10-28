@@ -4,7 +4,7 @@ use std::{iter::Peekable, ops::Range, str::Chars};
 
 use boba_token::Token;
 
-use crate::{LexerOutput, LexerState, Trivia};
+use crate::{LexOutput, LexState, Trivia};
 
 /// A character iterator that can look at the next character without consuming it.
 ///
@@ -57,14 +57,14 @@ pub trait PeekableCharExt: PeekableChar {
     /// Peeks the next character, returning [`Ok`] if it exists.
     ///
     /// Returns [`Err`] containing `or` if there was no next character.
-    fn peek_or(&mut self, or: LexerState) -> Result<char, LexerState> {
+    fn peek_or(&mut self, or: LexState) -> Result<char, LexState> {
         self.peek().ok_or(or)
     }
 
     /// Takes the next character, returning [`Ok`] if it exists.
     ///
     /// Returns [`Err`] containing `or` if there was no next character.
-    fn next_or(&mut self, or: LexerState) -> Result<char, LexerState> {
+    fn next_or(&mut self, or: LexState) -> Result<char, LexState> {
         let next_char = self.peek_or(or)?;
         let _ = self.next();
         Ok(next_char)
@@ -80,20 +80,20 @@ pub struct TriviaIter<I> {
     inner: I,
 }
 
-impl<I: Iterator<Item = LexerOutput>> TriviaIter<I> {
+impl<I: Iterator<Item = LexOutput>> TriviaIter<I> {
     /// Creates a trivia iterator over the given lexer output.
     pub fn from_output_iter(iter: I) -> Self {
         Self { inner: iter }
     }
 }
 
-impl<I: Iterator<Item = LexerOutput>> Iterator for TriviaIter<I> {
+impl<I: Iterator<Item = LexOutput>> Iterator for TriviaIter<I> {
     type Item = Trivia;
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
             return match self.inner.next()? {
-                LexerOutput::Trivia(trivia) => Some(trivia),
+                LexOutput::Trivia(trivia) => Some(trivia),
                 _ => continue,
             };
         }
@@ -108,20 +108,20 @@ pub struct TokenIter<I> {
     inner: I,
 }
 
-impl<I: Iterator<Item = LexerOutput>> TokenIter<I> {
+impl<I: Iterator<Item = LexOutput>> TokenIter<I> {
     /// Creates a token iterator over the given lexer output.
     pub fn from_output_iter(iter: I) -> Self {
         Self { inner: iter }
     }
 }
 
-impl<I: Iterator<Item = LexerOutput>> Iterator for TokenIter<I> {
+impl<I: Iterator<Item = LexOutput>> Iterator for TokenIter<I> {
     type Item = Token;
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
             return match self.inner.next()? {
-                LexerOutput::Token(token) => Some(token),
+                LexOutput::Token(token) => Some(token),
                 _ => continue,
             };
         }
@@ -130,8 +130,8 @@ impl<I: Iterator<Item = LexerOutput>> Iterator for TokenIter<I> {
 
 /// Extension methods for iterators of lexer output.
 ///
-/// These adapt a raw [`LexerOutput`] stream into one that yields only tokens or only trivia.
-pub trait LexerIterExt: Iterator<Item = LexerOutput> {
+/// These adapt a raw [`LexOutput`] stream into one that yields only tokens or only trivia.
+pub trait LexerIterExt: Iterator<Item = LexOutput> {
     /// Adapts this iterator to yield only its trivia, skipping tokens.
     fn trivia(self) -> TriviaIter<Self>
     where
@@ -148,7 +148,7 @@ pub trait LexerIterExt: Iterator<Item = LexerOutput> {
         TokenIter::from_output_iter(self)
     }
 }
-impl<I: Iterator<Item = LexerOutput>> LexerIterExt for I {}
+impl<I: Iterator<Item = LexOutput>> LexerIterExt for I {}
 
 /// A character iterator that tracks the byte range of the current token.
 pub struct RangeCounter<I: Iterator<Item = char>> {
@@ -211,7 +211,7 @@ pub trait RangeCounterExt: Iterator<Item = char> {
 }
 impl<I: Iterator<Item = char>> RangeCounterExt for I {}
 
-/// An iterator that lexes a stream of characters into [`LexerOutput`].
+/// An iterator that lexes a stream of characters into [`LexOutput`].
 ///
 /// Each call yields the next token or trivia from the input.
 /// A token still in progress when the input ends is finished and produced.
@@ -242,7 +242,7 @@ impl<I: Iterator<Item = char>> Lexer<I> {
 }
 
 impl<I: Iterator<Item = char>> Iterator for Lexer<I> {
-    type Item = LexerOutput;
+    type Item = LexOutput;
 
     fn next(&mut self) -> Option<Self::Item> {
         match self.inner.next() {
@@ -262,7 +262,7 @@ impl<I: Iterator<Item = char>> Iterator for Lexer<I> {
 /// Created with [`LexerExt::extendable_lexer`] or [`ExtendableLexer::from_source`].
 pub struct ExtendableLexer<I: Iterator<Item = char>> {
     inner: RangeCounter<I>,
-    state: Option<LexerState>,
+    state: Option<LexState>,
 }
 
 impl<'a> ExtendableLexer<Chars<'a>> {
@@ -311,13 +311,13 @@ impl<I: Iterator<Item = char>> ExtendableLexer<I> {
     /// Finishes a token that is still in progress at the end of input.
     ///
     /// Returns [`None`] when there is no token in progress.
-    pub fn finish(&mut self) -> Option<LexerOutput> {
+    pub fn finish(&mut self) -> Option<LexOutput> {
         Some(self.state.take()?.finish())
     }
 }
 
 impl<I: Iterator<Item = char>> Iterator for ExtendableLexer<I> {
-    type Item = LexerOutput;
+    type Item = LexOutput;
 
     fn next(&mut self) -> Option<Self::Item> {
         // try to resume from an old state
@@ -391,7 +391,7 @@ mod tests {
     }
 
     // a mix of tokens and trivia used to exercise the filtering iterators
-    fn sample() -> Vec<LexerOutput> {
+    fn sample() -> Vec<LexOutput> {
         vec![
             Token::Public.into(),
             Trivia::Space.into(),
@@ -428,7 +428,7 @@ mod tests {
 
     #[test]
     fn empty_stream_yields_nothing() {
-        let empty: Vec<LexerOutput> = Vec::new();
+        let empty: Vec<LexOutput> = Vec::new();
         assert_eq!(empty.clone().into_iter().tokens().count(), 0);
         assert_eq!(empty.into_iter().trivia().count(), 0);
     }
@@ -525,7 +525,7 @@ mod tests {
 
     #[test]
     fn lexer_yields_tokens_and_trivia_in_order() {
-        let output: Vec<LexerOutput> = "pub x".chars().lexer().collect();
+        let output: Vec<LexOutput> = "pub x".chars().lexer().collect();
         assert_eq!(
             output,
             vec![
@@ -539,13 +539,13 @@ mod tests {
     #[test]
     fn lexer_finishes_a_trailing_token_at_end_of_input() {
         // a keyword that ends the input is still produced as its token
-        let output: Vec<LexerOutput> = "const".chars().lexer().collect();
+        let output: Vec<LexOutput> = "const".chars().lexer().collect();
         assert_eq!(output, vec![Token::Constant.into()]);
     }
 
     #[test]
     fn lexer_from_source_lexes_the_whole_string() {
-        let output: Vec<LexerOutput> = Lexer::from_source("a.b").collect();
+        let output: Vec<LexOutput> = Lexer::from_source("a.b").collect();
         assert_eq!(
             output,
             vec![
@@ -571,7 +571,7 @@ mod tests {
     #[test]
     fn extendable_lexer_does_not_finish_a_trailing_token() {
         // unlike Lexer, a token still in progress at the end is not produced
-        let output: Vec<LexerOutput> = "const".chars().extendable_lexer().collect();
+        let output: Vec<LexOutput> = "const".chars().extendable_lexer().collect();
         assert!(output.is_empty());
     }
 
@@ -594,7 +594,7 @@ mod tests {
         assert_eq!(first.next(), None);
 
         // continuing over the rest produces the keyword as one token
-        let output: Vec<LexerOutput> = first.extend("st ").collect();
+        let output: Vec<LexOutput> = first.extend("st ").collect();
         assert_eq!(output, vec![Token::Constant.into(), Trivia::Space.into()]);
     }
 

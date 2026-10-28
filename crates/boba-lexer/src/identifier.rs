@@ -3,7 +3,7 @@
 use boba_token::Token;
 
 use crate::{
-    LexerOutput, LexerResult, LexerState,
+    LexOutput, LexResult, LexState,
     iter::{PeekableChar, PeekableCharExt},
 };
 
@@ -18,7 +18,7 @@ pub const fn is_valid_body(c: char) -> bool {
 }
 
 /// Finishes the identifier as an identifier token.
-pub fn finish() -> LexerOutput {
+pub fn finish() -> LexOutput {
     Token::Identifier.into()
 }
 
@@ -26,10 +26,10 @@ pub fn finish() -> LexerOutput {
 ///
 /// Each valid body character is consumed.
 /// The first invalid character ends the identifier and is left in place.
-pub fn parse_next(mut input: impl PeekableChar) -> LexerResult {
+pub fn parse_next(mut input: impl PeekableChar) -> LexResult {
     loop {
         // if the next character is not valid, finish the identifier
-        if !is_valid_body(input.peek_or(LexerState::Identifier)?) {
+        if !is_valid_body(input.peek_or(LexState::Identifier)?) {
             return finish().into();
         }
 
@@ -89,6 +89,6 @@ mod tests {
     #[test]
     fn empty_input_is_pending() {
         let mut input = "".chars().peekable();
-        assert_eq!(parse_next(&mut input), Err(LexerState::Identifier));
+        assert_eq!(parse_next(&mut input), Err(LexState::Identifier));
     }
 }

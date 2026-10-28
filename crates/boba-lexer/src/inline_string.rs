@@ -3,17 +3,17 @@
 use boba_token::Token;
 
 use crate::{
-    LexerOutput, LexerResult, LexerState, Trivia,
+    LexOutput, LexResult, LexState, Trivia,
     iter::{PeekableChar, PeekableCharExt},
 };
 
 /// Finishes a string that was never closed as unclosed string trivia.
-pub fn finish_unclosed() -> LexerOutput {
+pub fn finish_unclosed() -> LexOutput {
     Trivia::UnclosedStr.into()
 }
 
 /// Finishes a properly closed string as an inline string token.
-pub fn finish() -> LexerOutput {
+pub fn finish() -> LexOutput {
     Token::InlineString.into()
 }
 
@@ -22,9 +22,9 @@ pub fn finish() -> LexerOutput {
 /// A newline cannot be escaped, so this returns `false`.
 /// Any other character can be escaped, so this returns `true`.
 /// Returns [`Err`] with the pending escape state if the input has no next character.
-pub fn can_escape(mut input: impl PeekableChar) -> Result<bool, LexerState> {
+pub fn can_escape(mut input: impl PeekableChar) -> Result<bool, LexState> {
     // try to get the next character, returning the pending escape state if there is none
-    Ok(match input.peek_or(LexerState::InlineEscape)? {
+    Ok(match input.peek_or(LexState::InlineEscape)? {
         // return false on newline. newlines are invalid escape chars.
         '\r' | '\n' => false,
         // any other character can be escaped
@@ -36,7 +36,7 @@ pub fn can_escape(mut input: impl PeekableChar) -> Result<bool, LexerState> {
 ///
 /// A newline cannot be escaped and leaves the string unclosed.
 /// Any other character is accepted and parsing returns to the string body.
-pub fn parse_next_escape(mut input: impl PeekableChar) -> LexerResult {
+pub fn parse_next_escape(mut input: impl PeekableChar) -> LexResult {
     // if the next char can be escaped, consume and keep parsing the string
     if can_escape(&mut input)? {
         return input.consume_then(parse_next);
@@ -52,9 +52,9 @@ pub fn parse_next_escape(mut input: impl PeekableChar) -> LexerResult {
 /// A back slash begins an escape.
 /// A newline leaves the string unclosed.
 /// Any other character is part of the string body.
-pub fn parse_next(mut input: impl PeekableChar) -> LexerResult {
+pub fn parse_next(mut input: impl PeekableChar) -> LexResult {
     loop {
-        match input.peek_or(LexerState::InlineString)? {
+        match input.peek_or(LexState::InlineString)? {
             // a newline means the string parsing is over, finish and return the unclosed string now
             '\r' | '\n' => return finish_unclosed().into(),
             // close the valid string if we find a quote
@@ -135,7 +135,7 @@ mod tests {
     #[test]
     fn empty_input_is_pending() {
         let mut input = "".chars().peekable();
-        assert_eq!(parse_next(&mut input), Err(LexerState::InlineString));
+        assert_eq!(parse_next(&mut input), Err(LexState::InlineString));
     }
 
     #[test]
@@ -159,7 +159,7 @@ mod tests {
     #[test]
     fn escape_with_empty_input_is_pending() {
         let mut input = "".chars().peekable();
-        assert_eq!(parse_next_escape(&mut input), Err(LexerState::InlineEscape));
+        assert_eq!(parse_next_escape(&mut input), Err(LexState::InlineEscape));
     }
 
     #[test]

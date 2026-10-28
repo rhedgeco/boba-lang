@@ -1,13 +1,13 @@
 //! Parsing for back slashes, which may begin a multiline string.
 
 use crate::{
-    LexerOutput, LexerResult, LexerState, Trivia,
+    LexOutput, LexResult, LexState, Trivia,
     iter::{PeekableChar, PeekableCharExt},
     multiline_string,
 };
 
 /// Finishes a lone back slash as an invalid token.
-pub fn finish() -> LexerOutput {
+pub fn finish() -> LexOutput {
     Trivia::Invalid.into()
 }
 
@@ -15,8 +15,8 @@ pub fn finish() -> LexerOutput {
 ///
 /// A following back slash begins a multiline string.
 /// Anything else finishes the back slash as an invalid token.
-pub fn parse_next(mut input: impl PeekableChar) -> LexerResult {
-    match input.peek_or(LexerState::BackSlash)? {
+pub fn parse_next(mut input: impl PeekableChar) -> LexResult {
+    match input.peek_or(LexState::BackSlash)? {
         // if the next character is another back slash
         // then we should start parsing the multiline string
         '\\' => input.consume_then(multiline_string::parse_next),
@@ -40,7 +40,7 @@ mod tests {
         // with no newline the multiline string is still pending
         let mut input = "\\rest".chars().peekable();
         let result = parse_next(&mut input);
-        assert_eq!(result, Err(LexerState::MultilineString));
+        assert_eq!(result, Err(LexState::MultilineString));
     }
 
     #[test]
@@ -64,6 +64,6 @@ mod tests {
     fn empty_input_is_pending() {
         let mut input = "".chars().peekable();
         let result = parse_next(&mut input);
-        assert_eq!(result, Err(LexerState::BackSlash));
+        assert_eq!(result, Err(LexState::BackSlash));
     }
 }

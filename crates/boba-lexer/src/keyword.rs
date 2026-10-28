@@ -11,7 +11,7 @@ use std::num::NonZeroUsize;
 use boba_token::Token;
 
 use crate::{
-    LexerOutput, LexerResult, LexerState, identifier,
+    LexOutput, LexResult, LexState, identifier,
     iter::PeekableChar,
     keyword::utils::{KeywordStr, parse_next_keyword},
 };
@@ -27,7 +27,7 @@ pub const CONSTANT: KeywordStr<'static> = KeywordStr::build("const").unwrap();
 ///
 /// A full match finishes as a public token.
 /// A partial match finishes as an identifier instead.
-pub fn finish_public(length: NonZeroUsize) -> LexerOutput {
+pub fn finish_public(length: NonZeroUsize) -> LexOutput {
     if length != PUBLIC.len() {
         return identifier::finish();
     }
@@ -39,7 +39,7 @@ pub fn finish_public(length: NonZeroUsize) -> LexerOutput {
 ///
 /// A full match finishes as a variable token.
 /// A partial match finishes as an identifier instead.
-pub fn finish_variable(length: NonZeroUsize) -> LexerOutput {
+pub fn finish_variable(length: NonZeroUsize) -> LexOutput {
     if length != VARIABLE.len() {
         return identifier::finish();
     }
@@ -51,7 +51,7 @@ pub fn finish_variable(length: NonZeroUsize) -> LexerOutput {
 ///
 /// A full match finishes as a constant token.
 /// A partial match finishes as an identifier instead.
-pub fn finish_constant(length: NonZeroUsize) -> LexerOutput {
+pub fn finish_constant(length: NonZeroUsize) -> LexOutput {
     if length != CONSTANT.len() {
         return identifier::finish();
     }
@@ -60,33 +60,33 @@ pub fn finish_constant(length: NonZeroUsize) -> LexerOutput {
 }
 
 /// Continues trying to match a `pub` keyword from the given matched length.
-pub fn parse_next_public(length: NonZeroUsize, input: impl PeekableChar) -> LexerResult {
+pub fn parse_next_public(length: NonZeroUsize, input: impl PeekableChar) -> LexResult {
     parse_next_keyword(
         &PUBLIC,
         length,
-        LexerState::KeywordPublic,
+        LexState::KeywordPublic,
         finish_public,
         input,
     )
 }
 
 /// Continues trying to match a `var` keyword from the given matched length.
-pub fn parse_next_variable(length: NonZeroUsize, input: impl PeekableChar) -> LexerResult {
+pub fn parse_next_variable(length: NonZeroUsize, input: impl PeekableChar) -> LexResult {
     parse_next_keyword(
         &VARIABLE,
         length,
-        LexerState::KeywordVariable,
+        LexState::KeywordVariable,
         finish_variable,
         input,
     )
 }
 
 /// Continues trying to match a `const` keyword from the given matched length.
-pub fn parse_next_constant(length: NonZeroUsize, input: impl PeekableChar) -> LexerResult {
+pub fn parse_next_constant(length: NonZeroUsize, input: impl PeekableChar) -> LexResult {
     parse_next_keyword(
         &CONSTANT,
         length,
-        LexerState::KeywordConstant,
+        LexState::KeywordConstant,
         finish_constant,
         input,
     )
@@ -128,7 +128,7 @@ mod tests {
         let result = parse_next_public(NonZeroUsize::MIN, &mut input);
         assert_eq!(
             result,
-            Err(LexerState::KeywordPublic(NonZeroUsize::new(3).unwrap()))
+            Err(LexState::KeywordPublic(NonZeroUsize::new(3).unwrap()))
         );
     }
 
@@ -166,7 +166,7 @@ mod tests {
         let mut input = "".chars().peekable();
         assert_eq!(
             parse_next_variable(NonZeroUsize::MIN, &mut input),
-            Err(LexerState::KeywordVariable(NonZeroUsize::MIN))
+            Err(LexState::KeywordVariable(NonZeroUsize::MIN))
         );
     }
 }

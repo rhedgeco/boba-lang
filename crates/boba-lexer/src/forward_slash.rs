@@ -3,12 +3,12 @@
 use boba_token::Token;
 
 use crate::{
-    LexerOutput, LexerResult, LexerState, comment,
+    LexOutput, LexResult, LexState, comment,
     iter::{PeekableChar, PeekableCharExt},
 };
 
 /// Finishes a lone forward slash as a divide token.
-pub fn finish() -> LexerOutput {
+pub fn finish() -> LexOutput {
     Token::Divide.into()
 }
 
@@ -16,8 +16,8 @@ pub fn finish() -> LexerOutput {
 ///
 /// A following forward slash begins a comment.
 /// Anything else finishes the forward slash as a divide token.
-pub fn parse_next(mut input: impl PeekableChar) -> LexerResult {
-    match input.peek_or(LexerState::ForwardSlash)? {
+pub fn parse_next(mut input: impl PeekableChar) -> LexResult {
+    match input.peek_or(LexState::ForwardSlash)? {
         // if the next character is another forward slash
         // then we should start parsing the comment
         '/' => input.consume_then(comment::parse_next),
@@ -41,7 +41,7 @@ mod tests {
         let mut input = "/rest".chars().peekable();
         let result = parse_next(&mut input);
         // the second slash is consumed and the comment consumes the rest
-        assert_eq!(result, Err(LexerState::Comment));
+        assert_eq!(result, Err(LexState::Comment));
     }
 
     #[test]
@@ -63,6 +63,6 @@ mod tests {
     #[test]
     fn empty_input_is_pending() {
         let mut input = "".chars().peekable();
-        assert_eq!(parse_next(&mut input), Err(LexerState::ForwardSlash));
+        assert_eq!(parse_next(&mut input), Err(LexState::ForwardSlash));
     }
 }

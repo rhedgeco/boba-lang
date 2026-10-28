@@ -38,7 +38,7 @@ pub enum Trivia {
 
 /// Either a lexical or trivia token.
 #[derive(Debug, From, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum LexerOutput {
+pub enum LexOutput {
     /// A valid lexical token.
     Token(Token),
     /// A supporting trivia token.
@@ -49,16 +49,16 @@ pub enum LexerOutput {
 ///
 /// An [`Ok`] holds a completed token,
 /// while an [`Err`] holds the state needed to resume parsing once more input is available.
-pub type LexerResult = Result<LexerOutput, LexerState>;
+pub type LexResult = Result<LexOutput, LexState>;
 
-impl From<LexerOutput> for LexerResult {
-    fn from(output: LexerOutput) -> Self {
+impl From<LexOutput> for LexResult {
+    fn from(output: LexOutput) -> Self {
         Ok(output)
     }
 }
 
-impl From<LexerState> for LexerResult {
-    fn from(lexer: LexerState) -> Self {
+impl From<LexState> for LexResult {
+    fn from(lexer: LexState) -> Self {
         Err(lexer)
     }
 }
@@ -68,7 +68,7 @@ impl From<LexerState> for LexerResult {
 /// Each variant records where lexing left off,
 /// so that the next character can be handled correctly when parsing resumes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum LexerState {
+pub enum LexState {
     /// Parsing a back slash that may begin a multiline string.
     BackSlash,
     /// Consuming the body of a line comment.
@@ -93,12 +93,12 @@ pub enum LexerState {
     Newline,
 }
 
-impl LexerState {
+impl LexState {
     /// Resumes parsing from this state and always produces a token.
     ///
     /// If the input runs out before the token completes,
-    /// the resumable state is finished in place with [`LexerState::finish`].
-    pub fn parse(self, input: impl PeekableChar) -> LexerOutput {
+    /// the resumable state is finished in place with [`LexState::finish`].
+    pub fn parse(self, input: impl PeekableChar) -> LexOutput {
         match self.try_parse(input) {
             Err(state) => state.finish(),
             Ok(output) => output,
@@ -108,7 +108,7 @@ impl LexerState {
     /// Completes this state at the end of input without consuming more.
     ///
     /// This is used to finish a token when the input has been exhausted while parsing was still in progress.
-    pub fn finish(self) -> LexerOutput {
+    pub fn finish(self) -> LexOutput {
         match self {
             Self::BackSlash => back_slash::finish(),
             Self::Comment => comment::finish(),
@@ -128,7 +128,7 @@ impl LexerState {
     ///
     /// Returns [`Ok`] with a completed token,
     /// or [`Err`] with resumable state if the token is still pending.
-    pub fn try_parse(self, input: impl PeekableChar) -> LexerResult {
+    pub fn try_parse(self, input: impl PeekableChar) -> LexResult {
         match self {
             Self::BackSlash => back_slash::parse_next(input),
             Self::Comment => comment::parse_next(input),
@@ -149,7 +149,7 @@ impl LexerState {
 ///
 /// Returns [`None`] if the input is completely exhausted.
 /// Any token that is still pending when the input ends is finished and returned.
-pub fn parse(input: impl PeekableChar) -> Option<LexerOutput> {
+pub fn parse(input: impl PeekableChar) -> Option<LexOutput> {
     match try_parse(input)? {
         Err(state) => state.finish().into(),
         Ok(output) => output.into(),
@@ -160,7 +160,7 @@ pub fn parse(input: impl PeekableChar) -> Option<LexerOutput> {
 ///
 /// Returns [`None`] if the input is completely exhausted.
 /// Otherwise it parses characters and either produces a token or resumable state.
-pub fn try_parse(mut input: impl PeekableChar) -> Option<LexerResult> {
+pub fn try_parse(mut input: impl PeekableChar) -> Option<LexResult> {
     Some(match input.next()? {
         // --- SINGLE-CHAR TOKENS ---
         // some simple characters can be processed immediately
@@ -212,7 +212,7 @@ mod tests {
     use super::*;
 
     // parses every token from a string until the input is exhausted
-    fn parse_tokens(text: &str) -> Vec<LexerOutput> {
+    fn parse_tokens(text: &str) -> Vec<LexOutput> {
         let mut input = text.chars().peekable();
         let mut tokens = Vec::new();
         while let Some(token) = parse(&mut input) {
@@ -321,7 +321,7 @@ mod tests {
     fn try_parse_returns_resumable_state() {
         // a quote with no closing quote leaves the string pending
         let mut input = "\"open".chars().peekable();
-        assert_eq!(try_parse(&mut input), Some(Err(LexerState::InlineString)));
+        assert_eq!(try_parse(&mut input), Some(Err(LexState::InlineString)));
     }
 
     #[test]
@@ -365,30 +365,30 @@ mod tests {
 
     #[test]
     fn lexer_state_finish_covers_all_variants() {
-        assert_eq!(LexerState::BackSlash.finish(), Trivia::Invalid.into());
-        assert_eq!(LexerState::Comment.finish(), Trivia::Comment.into());
-        assert_eq!(LexerState::ForwardSlash.finish(), Token::Divide.into());
-        assert_eq!(LexerState::Identifier.finish(), Token::Identifier.into());
+        assert_eq!(LexState::BackSlash.finish(), Trivia::Invalid.into());
+        assert_eq!(LexState::Comment.finish(), Trivia::Comment.into());
+        assert_eq!(LexState::ForwardSlash.finish(), Token::Divide.into());
+        assert_eq!(LexState::Identifier.finish(), Token::Identifier.into());
         assert_eq!(
-            LexerState::InlineEscape.finish(),
+            LexState::InlineEscape.finish(),
             Trivia::UnclosedStr.into()
         );
         assert_eq!(
-            LexerState::InlineString.finish(),
+            LexState::InlineString.finish(),
             Trivia::UnclosedStr.into()
         );
         assert_eq!(
-            LexerState::MultilineString.finish(),
+            LexState::MultilineString.finish(),
             Token::MultilineString.into()
         );
-        assert_eq!(LexerState::Newline.finish(), Trivia::Newline.into());
+        assert_eq!(LexState::Newline.finish(), Trivia::Newline.into());
         // keywords finish as their token only at the full length
         assert_eq!(
-            LexerState::KeywordPublic(keyword::PUBLIC.len()).finish(),
+            LexState::KeywordPublic(keyword::PUBLIC.len()).finish(),
             Token::Public.into()
         );
         assert_eq!(
-            LexerState::KeywordPublic(NonZeroUsize::MIN).finish(),
+            LexState::KeywordPublic(NonZeroUsize::MIN).finish(),
             Token::Identifier.into()
         );
     }
@@ -397,7 +397,7 @@ mod tests {
     fn lexer_state_try_parse_resumes() {
         // resuming a comment state consumes the body until the newline
         let mut input = "body\n".chars().peekable();
-        let result = LexerState::Comment.try_parse(&mut input);
+        let result = LexState::Comment.try_parse(&mut input);
         assert_eq!(result, Ok(Trivia::Comment.into()));
     }
 }

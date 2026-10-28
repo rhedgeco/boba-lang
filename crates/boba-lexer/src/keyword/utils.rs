@@ -3,7 +3,7 @@
 use std::num::NonZeroUsize;
 
 use crate::{
-    LexerOutput, LexerResult, LexerState, identifier,
+    LexOutput, LexResult, LexState, identifier,
     iter::{PeekableChar, PeekableCharExt},
 };
 
@@ -97,10 +97,10 @@ impl<'a> KeywordStr<'a> {
 pub fn parse_next_keyword(
     keyword: &KeywordStr,
     mut length: NonZeroUsize,
-    pending: impl Fn(NonZeroUsize) -> LexerState,
-    finish: impl Fn(NonZeroUsize) -> LexerOutput,
+    pending: impl Fn(NonZeroUsize) -> LexState,
+    finish: impl Fn(NonZeroUsize) -> LexOutput,
     mut input: impl PeekableChar,
-) -> LexerResult {
+) -> LexResult {
     loop {
         return match (input.peek(), keyword.get(length.get())) {
             // the input ran out, so park as pending until more input or a final finish
@@ -166,11 +166,11 @@ mod tests {
 
     // runs parse_next_keyword against WORD, starting at the given matched length
     // the pending state and completion token are stand ins for a real caller
-    fn parse_word(length: NonZeroUsize, rest: &str) -> LexerResult {
+    fn parse_word(length: NonZeroUsize, rest: &str) -> LexResult {
         parse_next_keyword(
             &WORD,
             length,
-            |_| LexerState::Identifier,
+            |_| LexState::Identifier,
             |_| WORD_TOKEN.into(),
             rest.chars().peekable(),
         )
@@ -188,7 +188,7 @@ mod tests {
     fn parse_next_keyword_pending_at_eof() {
         // the rest matches but the input ends, so it stays pending
         let result = parse_word(NonZeroUsize::MIN, "ord");
-        assert_eq!(result, Err(LexerState::Identifier));
+        assert_eq!(result, Err(LexState::Identifier));
     }
 
     #[test]
@@ -212,7 +212,7 @@ mod tests {
         let _ = parse_next_keyword(
             &WORD,
             NonZeroUsize::MIN,
-            |_| LexerState::Identifier,
+            |_| LexState::Identifier,
             |_| WORD_TOKEN.into(),
             &mut input,
         );
