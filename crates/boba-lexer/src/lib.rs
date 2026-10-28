@@ -369,14 +369,8 @@ mod tests {
         assert_eq!(LexState::Comment.finish(), Trivia::Comment.into());
         assert_eq!(LexState::ForwardSlash.finish(), Token::Divide.into());
         assert_eq!(LexState::Identifier.finish(), Token::Identifier.into());
-        assert_eq!(
-            LexState::InlineEscape.finish(),
-            Trivia::UnclosedStr.into()
-        );
-        assert_eq!(
-            LexState::InlineString.finish(),
-            Trivia::UnclosedStr.into()
-        );
+        assert_eq!(LexState::InlineEscape.finish(), Trivia::UnclosedStr.into());
+        assert_eq!(LexState::InlineString.finish(), Trivia::UnclosedStr.into());
         assert_eq!(
             LexState::MultilineString.finish(),
             Token::MultilineString.into()
