@@ -13,6 +13,7 @@ pub mod iter;
 pub mod keyword;
 pub mod multiline_string;
 pub mod newline;
+pub mod range;
 
 // re-export token for convenience
 pub use boba_token::Token;
