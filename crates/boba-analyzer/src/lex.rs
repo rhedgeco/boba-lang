@@ -1,7 +1,7 @@
-use boba_lexer::{LexerOutput, Trivia, range::CounterExt};
+use boba_lexer::{LexerOutput, Trivia, iter::RangeCounterExt};
 
 pub fn print_tokens(source: &str) {
-    let mut chars = source.chars().counter();
+    let mut chars = source.chars().range_counter();
     while let Some(result) = boba_lexer::try_parse(&mut chars) {
         let output = match result {
             Err(state) => state.finish(),
