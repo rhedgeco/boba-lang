@@ -1,8 +1,11 @@
 //! A character driven lexer for the boba language.
 
-use std::num::NonZeroUsize;
+// re-export Token for convenience
+pub use boba_token::Token;
 
 use derive_more::From;
+
+use crate::{iter::PeekableChar, keyword::PendingKeyword};
 
 pub mod back_slash;
 pub mod comment;
@@ -13,11 +16,6 @@ pub mod iter;
 pub mod keyword;
 pub mod multiline_string;
 pub mod newline;
-
-// re-export token for convenience
-pub use boba_token::Token;
-
-use crate::iter::PeekableChar;
 
 /// Non lexical tokens produced by the lexer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -67,7 +65,7 @@ impl From<LexState> for LexResult {
 ///
 /// Each variant records where lexing left off,
 /// so that the next character can be handled correctly when parsing resumes.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, From, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum LexState {
     /// Parsing a back slash that may begin a multiline string.
     BackSlash,
@@ -81,12 +79,8 @@ pub enum LexState {
     InlineEscape,
     /// Consuming the body of an inline string.
     InlineString,
-    /// Matching a possible `const` keyword, holding the matched length.
-    KeywordConstant(NonZeroUsize),
-    /// Matching a possible `pub` keyword, holding the matched length.
-    KeywordPublic(NonZeroUsize),
-    /// Matching a possible `var` keyword, holding the matched length.
-    KeywordVariable(NonZeroUsize),
+    /// Matching a possible keyword.
+    Keyword(PendingKeyword),
     /// Consuming the body of a multiline string.
     MultilineString,
     /// Parsing a `\r` newline that may be followed by a `\n`.
@@ -116,9 +110,7 @@ impl LexState {
             Self::Identifier => identifier::finish(),
             Self::InlineEscape => inline_string::finish_unclosed(),
             Self::InlineString => inline_string::finish_unclosed(),
-            Self::KeywordConstant(length) => keyword::finish_constant(length),
-            Self::KeywordPublic(length) => keyword::finish_public(length),
-            Self::KeywordVariable(length) => keyword::finish_variable(length),
+            Self::Keyword(pending) => pending.finish(),
             Self::MultilineString => multiline_string::finish(),
             Self::Newline => newline::finish(),
         }
@@ -136,9 +128,7 @@ impl LexState {
             Self::Identifier => identifier::parse_next(input),
             Self::InlineEscape => inline_string::parse_next_escape(input),
             Self::InlineString => inline_string::parse_next(input),
-            Self::KeywordConstant(length) => keyword::parse_next_constant(length, input),
-            Self::KeywordPublic(length) => keyword::parse_next_public(length, input),
-            Self::KeywordVariable(length) => keyword::parse_next_variable(length, input),
+            Self::Keyword(pending) => pending.parse_next(input),
             Self::MultilineString => multiline_string::parse_next(input),
             Self::Newline => newline::parse_next(input),
         }
@@ -192,13 +182,11 @@ pub fn try_parse(mut input: impl PeekableChar) -> Option<LexResult> {
         '\r' => newline::parse_next(input),
 
         // --- KEYWORDS / IDENTIFIERS ---
-        // keywords start with a specific letter
-        // the start length is 1 since the initial letter is included
-        'p' => keyword::parse_next_public(NonZeroUsize::MIN, input),
-        'v' => keyword::parse_next_variable(NonZeroUsize::MIN, input),
-        'c' => keyword::parse_next_constant(NonZeroUsize::MIN, input),
-        // any other letter is lastly assumed to be an ident
-        // identifiers have a range of valid start characters
+        // each keyword starts with a unique letter
+        keyword::PUB_FIRST => keyword::PUB.skip_next().parse_next(input),
+        keyword::VAR_FIRST => keyword::VAR.skip_next().parse_next(input),
+        keyword::CONST_FIRST => keyword::CONST.skip_next().parse_next(input),
+        // any letter not used in a keyword should be checked for an identifier
         c if identifier::is_valid_start(c) => identifier::parse_next(input),
 
         // --- INVALID CHARACTERS ---
@@ -376,13 +364,12 @@ mod tests {
             Token::MultilineString.into()
         );
         assert_eq!(LexState::Newline.finish(), Trivia::Newline.into());
-        // keywords finish as their token only at the full length
+        // a fully matched keyword (no pending characters) finishes as its token
+        let matched = keyword::PUB.skip_next().skip_next().skip_next();
+        assert_eq!(LexState::Keyword(matched).finish(), Token::Public.into());
+        // a keyword with pending characters finishes as an identifier
         assert_eq!(
-            LexState::KeywordPublic(keyword::PUBLIC.len()).finish(),
-            Token::Public.into()
-        );
-        assert_eq!(
-            LexState::KeywordPublic(NonZeroUsize::MIN).finish(),
+            LexState::Keyword(keyword::PUB).finish(),
             Token::Identifier.into()
         );
     }
