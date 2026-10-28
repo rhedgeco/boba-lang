@@ -1,6 +1,6 @@
 //! Iterator support for lexing, including peeking and output filtering.
 
-use std::{iter::Peekable, ops::Range};
+use std::{iter::Peekable, ops::Range, str::Chars};
 
 use boba_token::Token;
 
@@ -77,7 +77,14 @@ impl<I: PeekableChar> PeekableCharExt for I {}
 /// Token output is skipped, so only [`Trivia`] values are produced.
 /// Created with [`LexerIterExt::trivia`].
 pub struct TriviaIter<I> {
-    lexer_iter: I,
+    inner: I,
+}
+
+impl<I: Iterator<Item = LexerOutput>> TriviaIter<I> {
+    /// Creates a trivia iterator over the given lexer output.
+    pub fn from_output_iter(iter: I) -> Self {
+        Self { inner: iter }
+    }
 }
 
 impl<I: Iterator<Item = LexerOutput>> Iterator for TriviaIter<I> {
@@ -85,7 +92,7 @@ impl<I: Iterator<Item = LexerOutput>> Iterator for TriviaIter<I> {
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
-            return match self.lexer_iter.next()? {
+            return match self.inner.next()? {
                 LexerOutput::Trivia(trivia) => Some(trivia),
                 _ => continue,
             };
@@ -98,7 +105,14 @@ impl<I: Iterator<Item = LexerOutput>> Iterator for TriviaIter<I> {
 /// Trivia output is skipped, so only [`Token`] values are produced.
 /// Created with [`LexerIterExt::tokens`].
 pub struct TokenIter<I> {
-    lexer_iter: I,
+    inner: I,
+}
+
+impl<I: Iterator<Item = LexerOutput>> TokenIter<I> {
+    /// Creates a token iterator over the given lexer output.
+    pub fn from_output_iter(iter: I) -> Self {
+        Self { inner: iter }
+    }
 }
 
 impl<I: Iterator<Item = LexerOutput>> Iterator for TokenIter<I> {
@@ -106,7 +120,7 @@ impl<I: Iterator<Item = LexerOutput>> Iterator for TokenIter<I> {
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
-            return match self.lexer_iter.next()? {
+            return match self.inner.next()? {
                 LexerOutput::Token(token) => Some(token),
                 _ => continue,
             };
@@ -123,7 +137,7 @@ pub trait LexerIterExt: Iterator<Item = LexerOutput> {
     where
         Self: Sized,
     {
-        TriviaIter { lexer_iter: self }
+        TriviaIter::from_output_iter(self)
     }
 
     /// Adapts this iterator to yield only its tokens, skipping trivia.
@@ -131,7 +145,7 @@ pub trait LexerIterExt: Iterator<Item = LexerOutput> {
     where
         Self: Sized,
     {
-        TokenIter { lexer_iter: self }
+        TokenIter::from_output_iter(self)
     }
 }
 impl<I: Iterator<Item = LexerOutput>> LexerIterExt for I {}
@@ -144,6 +158,15 @@ pub struct RangeCounter<I: Iterator<Item = char>> {
 }
 
 impl<I: Iterator<Item = char>> RangeCounter<I> {
+    /// Creates a range counter over the given character iterator.
+    pub fn from_char_iter(iter: I) -> Self {
+        Self {
+            inner: iter.peekable(),
+            start: 0,
+            end: 0,
+        }
+    }
+
     /// Moves the start of the tracked range up to the current end.
     ///
     /// This should be called after a token is produced so that the next
@@ -174,7 +197,7 @@ impl<I: Iterator<Item = char>> Iterator for RangeCounter<I> {
     }
 }
 
-/// Extension trait for wrapping a character iterator in a [`Counter`].
+/// Extension trait for wrapping a character iterator in a [`RangeCounter`].
 pub trait RangeCounterExt: Iterator<Item = char> {
     /// Wraps this iterator in a [`RangeCounter`] that tracks consumed byte ranges.
     ///
@@ -183,14 +206,160 @@ pub trait RangeCounterExt: Iterator<Item = char> {
     where
         Self: Sized,
     {
-        RangeCounter {
-            inner: self.peekable(),
-            start: 0,
-            end: 0,
-        }
+        RangeCounter::from_char_iter(self)
     }
 }
 impl<I: Iterator<Item = char>> RangeCounterExt for I {}
+
+/// An iterator that lexes a stream of characters into [`LexerOutput`].
+///
+/// Each call yields the next token or trivia from the input.
+/// A token still in progress when the input ends is finished and produced.
+/// Created with [`LexerExt::lexer`] or [`Lexer::from_source`].
+pub struct Lexer<I: Iterator<Item = char>> {
+    inner: ExtendableLexer<I>,
+}
+
+impl<'a> Lexer<Chars<'a>> {
+    /// Creates a lexer over the characters of `source`.
+    pub fn from_source(source: &'a str) -> Self {
+        Self::from_char_iter(source.chars())
+    }
+}
+
+impl<I: Iterator<Item = char>> Lexer<I> {
+    /// Creates a lexer over the given character iterator.
+    pub fn from_char_iter(iter: I) -> Self {
+        Self {
+            inner: ExtendableLexer::from_char_iter(iter),
+        }
+    }
+
+    /// Returns the byte range of the most recently produced output.
+    pub fn range(&self) -> Range<usize> {
+        self.inner.range()
+    }
+}
+
+impl<I: Iterator<Item = char>> Iterator for Lexer<I> {
+    type Item = LexerOutput;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.inner.next() {
+            Some(output) => Some(output),
+            None => self.inner.finish(),
+        }
+    }
+}
+
+/// A lexer that can continue over input supplied in separate pieces.
+///
+/// Unlike [`Lexer`], it does not finish a token in progress when the input ends.
+/// Instead, lexing can be continued across a boundary with [`extend`](ExtendableLexer::extend),
+/// so a token split between two pieces of input is produced as a single token.
+/// Any token still in progress once no more input will follow is produced by
+/// [`finish`](ExtendableLexer::finish).
+/// Created with [`LexerExt::extendable_lexer`] or [`ExtendableLexer::from_source`].
+pub struct ExtendableLexer<I: Iterator<Item = char>> {
+    inner: RangeCounter<I>,
+    state: Option<LexerState>,
+}
+
+impl<'a> ExtendableLexer<Chars<'a>> {
+    /// Creates a lexer over the characters of `source`.
+    pub fn from_source(source: &'a str) -> Self {
+        Self::from_char_iter(source.chars())
+    }
+}
+
+impl<I: Iterator<Item = char>> ExtendableLexer<I> {
+    /// Creates a lexer over the given character iterator.
+    pub fn from_char_iter(iter: I) -> Self {
+        Self {
+            inner: iter.range_counter(),
+            state: None,
+        }
+    }
+
+    /// Returns the byte range of the most recently produced output.
+    pub fn range(&self) -> Range<usize> {
+        self.inner.range()
+    }
+
+    /// Continues lexing over the characters of `source`.
+    ///
+    /// A token left in progress when the previous input ended is resumed,
+    /// so a token split across the boundary is produced as a single token.
+    pub fn extend<'a>(&self, source: &'a str) -> ExtendableLexer<Chars<'a>> {
+        self.extend_with(source.chars())
+    }
+
+    /// Continues lexing over the given character iterator.
+    ///
+    /// A token left in progress when the previous input ended is resumed,
+    /// so a token split across the boundary is produced as a single token.
+    pub fn extend_with<I2>(&self, iter: I2) -> ExtendableLexer<I2>
+    where
+        I2: Iterator<Item = char>,
+    {
+        ExtendableLexer {
+            inner: iter.range_counter(),
+            state: self.state,
+        }
+    }
+
+    /// Finishes a token that is still in progress at the end of input.
+    ///
+    /// Returns [`None`] when there is no token in progress.
+    pub fn finish(&mut self) -> Option<LexerOutput> {
+        Some(self.state.take()?.finish())
+    }
+}
+
+impl<I: Iterator<Item = char>> Iterator for ExtendableLexer<I> {
+    type Item = LexerOutput;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        // try to resume from an old state
+        let result = match self.state.take() {
+            Some(state) => state.try_parse(&mut self.inner),
+            None => {
+                self.inner.reset_range();
+                crate::try_parse(&mut self.inner)?
+            }
+        };
+
+        // extract the resulting token or state
+        match result {
+            Ok(output) => Some(output),
+            Err(state) => {
+                self.state = Some(state);
+                None
+            }
+        }
+    }
+}
+
+/// Extension methods for lexing a character iterator.
+pub trait LexerExt: Iterator<Item = char> {
+    /// Wraps this iterator in a [`Lexer`] that yields its tokens and trivia.
+    fn lexer(self) -> Lexer<Self>
+    where
+        Self: Sized,
+    {
+        Lexer::from_char_iter(self)
+    }
+
+    /// Wraps this iterator in an [`ExtendableLexer`] that can continue over
+    /// input supplied in separate pieces.
+    fn extendable_lexer(self) -> ExtendableLexer<Self>
+    where
+        Self: Sized,
+    {
+        ExtendableLexer::from_char_iter(self)
+    }
+}
+impl<I: Iterator<Item = char>> LexerExt for I {}
 
 #[cfg(test)]
 mod tests {
@@ -352,5 +521,105 @@ mod tests {
         // next past the end yields None and leaves the range unchanged
         assert_eq!(counter.next(), None);
         assert_eq!(counter.range(), 0..2);
+    }
+
+    #[test]
+    fn lexer_yields_tokens_and_trivia_in_order() {
+        let output: Vec<LexerOutput> = "pub x".chars().lexer().collect();
+        assert_eq!(
+            output,
+            vec![
+                Token::Public.into(),
+                Trivia::Space.into(),
+                Token::Identifier.into(),
+            ]
+        );
+    }
+
+    #[test]
+    fn lexer_finishes_a_trailing_token_at_end_of_input() {
+        // a keyword that ends the input is still produced as its token
+        let output: Vec<LexerOutput> = "const".chars().lexer().collect();
+        assert_eq!(output, vec![Token::Constant.into()]);
+    }
+
+    #[test]
+    fn lexer_from_source_lexes_the_whole_string() {
+        let output: Vec<LexerOutput> = Lexer::from_source("a.b").collect();
+        assert_eq!(
+            output,
+            vec![
+                Token::Identifier.into(),
+                Token::AccessMember.into(),
+                Token::Identifier.into(),
+            ]
+        );
+    }
+
+    #[test]
+    fn lexer_range_slices_the_source_of_the_last_output() {
+        let source = "pub x";
+        let mut lexer = source.chars().lexer();
+        lexer.next();
+        assert_eq!(&source[lexer.range()], "pub");
+        lexer.next();
+        assert_eq!(&source[lexer.range()], " ");
+        lexer.next();
+        assert_eq!(&source[lexer.range()], "x");
+    }
+
+    #[test]
+    fn extendable_lexer_does_not_finish_a_trailing_token() {
+        // unlike Lexer, a token still in progress at the end is not produced
+        let output: Vec<LexerOutput> = "const".chars().extendable_lexer().collect();
+        assert!(output.is_empty());
+    }
+
+    #[test]
+    fn extendable_lexer_finish_produces_the_trailing_token() {
+        let mut lexer = "const".chars().extendable_lexer();
+        // nothing is produced while the token is still in progress
+        assert_eq!(lexer.next(), None);
+        // finishing yields the token that was in progress
+        assert_eq!(lexer.finish(), Some(Token::Constant.into()));
+        // and there is nothing left to finish
+        assert_eq!(lexer.finish(), None);
+    }
+
+    #[test]
+    fn extendable_lexer_resumes_a_token_split_across_the_boundary() {
+        // "con" + "st" is a single keyword once the pieces are joined
+        let mut first = "con".chars().extendable_lexer();
+        // the keyword is still in progress, so nothing is produced yet
+        assert_eq!(first.next(), None);
+
+        // continuing over the rest produces the keyword as one token
+        let output: Vec<LexerOutput> = first.extend("st ").collect();
+        assert_eq!(output, vec![Token::Constant.into(), Trivia::Space.into()]);
+    }
+
+    #[test]
+    fn extendable_lexer_resumed_token_is_not_repeated() {
+        // once a resumed token is produced it must not be produced again
+        let mut first = "pu".chars().extendable_lexer();
+        assert_eq!(first.next(), None);
+
+        // the trailing space gives the identifier a boundary to complete on
+        let mut rest = first.extend("b x ");
+        assert_eq!(rest.next(), Some(Token::Public.into()));
+        assert_eq!(rest.next(), Some(Trivia::Space.into()));
+        assert_eq!(rest.next(), Some(Token::Identifier.into()));
+        assert_eq!(rest.next(), Some(Trivia::Space.into()));
+        assert_eq!(rest.next(), None);
+    }
+
+    #[test]
+    fn extendable_lexer_range_tracks_the_current_piece() {
+        let source = "a.b";
+        let mut lexer = ExtendableLexer::from_source(source);
+        lexer.next();
+        assert_eq!(&source[lexer.range()], "a");
+        lexer.next();
+        assert_eq!(&source[lexer.range()], ".");
     }
 }
